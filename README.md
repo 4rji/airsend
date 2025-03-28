@@ -1,8 +1,19 @@
+
 # AirSend
 
 AirSend is a lightweight command-line tool developed to transfer files and exchange messages directly between machines with customized IP and port settings, overcoming limitations found in similar tools like Wormhole.
 
 I created AirSend out of the necessity for flexibility that other tools like Wormhole lacked—particularly the ability to customize IP addresses and ports. AirSend addresses these gaps by supporting multiple file transfers, direct peer-to-peer connections, customizable ports, and the option to store files and messages on a relay server (C2).
+
+### AirSend Default Configuration
+
+| Variable               | Description                                             | Default Value            |
+|------------------------|---------------------------------------------------------|--------------------------|
+| `DEFAULT_SERVER_HOST`  | Default relay server host. *(Upcoming releases will allow specifying your own custom C2 domain.)* | `c2server.com`           |
+| `DEFAULT_SERVER_PORT`  | Default port used for secure communications.            | `443`                    |
+| `FILES_DIR`            | Directory for storing files in server (`-s`) mode.      | `/opt/4rji/airsend`      |
+
+
 
 ## Key Features
 
@@ -30,32 +41,34 @@ airsend -f <host> <port> <file1> <file2>
 airsend -r <host> <port> <code>
 ```
 
-### Messaging
-**Send Messages:**
-```bash
-airsend -m <host> <port>
-```
-
-**Receive Messages:**
-```bash
-airsend -mr <code> <host> <port>
-```
 
 ### Direct Transfer Mode
-**Direct Send:**
-```bash
-airsend -d <target-host> [port] <file>
-```
 
 **Direct Receive:**
 ```bash
 airsend -ds <listen-host> <port>
 ```
 
+
+
+**Direct Send:**
+```bash
+airsend -d <target-host> [port] <file>
+```
+
+
+
+### Messaging
+**Send Messages:**
+```bash
+coming soon```
+
+**Receive Messages:**
+```bash
+coming soon
+```
+
+
 ## Releases
 
 Precompiled binaries for AMD and ARM architectures are available in the Releases section.
-
-## License
-
-MIT License.
