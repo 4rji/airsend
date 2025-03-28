@@ -1,52 +1,61 @@
-
 # AirSend
 
-AirSend is a lightweight command-line tool for transferring files and exchanging messages directly between machines without requiring a persistent server. It supports multiple modes for file transfer and chat relay, including a direct send/receive mode. Precompiled binaries for AMD and ARM architectures are available in the Releases section.
+AirSend is a lightweight command-line tool developed to transfer files and exchange messages directly between machines with customized IP and port settings, overcoming limitations found in similar tools like Wormhole.
 
-## Features and Usage
+I created AirSend out of the necessity for flexibility that other tools like Wormhole lacked—particularly the ability to customize IP addresses and ports. AirSend addresses these gaps by supporting multiple file transfers, direct peer-to-peer connections, customizable ports, and the option to store files and messages on a relay server (C2).
 
-AirSend supports various modes:
+## Key Features
 
-- **Server Mode:** Run a persistent server to handle file transfers or chat sessions. Start the server with:
-  ```bash
-  sudo ./airsend -s [host] [port]
-  ```
-  where `host` is the IP address to bind (default: `0.0.0.0`) and `port` is the port to listen on (default: `443`).
+- Customize IP addresses and ports
+- Send and receive multiple files
+- Direct peer-to-peer connections
+- Relay server support (C2)
 
-- **File Transfer (Client):**  
-  - **Send File (Store on Server):** Use this mode to send a file to the server, which stores it with a generated pairing code:
-    ```bash
-    ./airsend -f <file-path> [host] [port]
-    ```
-  - **Receive File:** Retrieve the file stored on the server using the provided pairing code:
-    ```bash
-    ./airsend -r <code> [host] [port]
-    ```
+## Usage
 
-- **Chat Relay:**  
-  - **Chat Sender:** Generates a pairing code and connects as a chat sender:
-    ```bash
-    ./airsend -m [host] [port]
-    ```
-  - **Chat Receiver:** Connects as a chat receiver using the provided pairing code:
-    ```bash
-    ./airsend -mr <code> [host] [port]
-    ```
+### Server Mode
+Start a server to manage file transfers and message relays:
+```bash
+sudo airsend -s <host> <port>
+```
 
-- **Direct Transfer Mode (-d):** Send files directly between two machines without requiring a persistent server.
-  - **Direct Send:**
-    ```bash
-    ./airsend -d send <file> <dest_ip> [port]
-    ```
-  - **Direct Receive:**
-    ```bash
-    ./airsend -d recv [listen_ip] [port]
-    ```
+### File Transfer
+**Send Files:**
+```bash
+airsend -f <host> <port> <file1> <file2>
+```
+
+**Receive Files:**
+```bash
+airsend -r <host> <port> <code>
+```
+
+### Messaging
+**Send Messages:**
+```bash
+airsend -m <host> <port>
+```
+
+**Receive Messages:**
+```bash
+airsend -mr <code> <host> <port>
+```
+
+### Direct Transfer Mode
+**Direct Send:**
+```bash
+airsend -d <target-host> [port] <file>
+```
+
+**Direct Receive:**
+```bash
+airsend -ds <listen-host> <port>
+```
 
 ## Releases
 
-Precompiled binaries for AMD and ARM are available in the releases section.
+Precompiled binaries for AMD and ARM architectures are available in the Releases section.
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License.
