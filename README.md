@@ -1,4 +1,4 @@
-The tutorial and usage steps are also available on my [blog](https://docs.4rji.com/airsend).
+The tutorial and usage steps are also available on my [https://docs.4rji.com/airsend](https://docs.4rji.com/airsend).
 
 
 # AirSend
