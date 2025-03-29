@@ -1,3 +1,5 @@
+The tutorial and usage steps are also available on my [blog](https://docs.4rji.com/airsend).
+
 
 # AirSend
 
