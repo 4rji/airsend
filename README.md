@@ -17,6 +17,10 @@ Thanks to a goMN and the talk "Creating a TUI chat app" by Michael Duren yesterd
 Michael also had a menu using a secret word to enable private connections. So instead of AirSend generating random codes, I added the option to set a secret word to access the chat with another person using the same word. I’ll work later on adding support for more people in the chat, but for now it’s just client and server.
 
 
+<img width="1152" alt="Image" src="https://github.com/user-attachments/assets/115bb420-9f06-4979-8fa4-09f4ed8760b4" />
+
+
+
 
 
 ### AirSend Default Configuration
