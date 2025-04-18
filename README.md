@@ -7,6 +7,18 @@ AirSend is a lightweight command-line tool developed to transfer files and excha
 
 I created AirSend out of the necessity for flexibility that other tools like Wormhole lacked—particularly the ability to customize IP addresses and ports. AirSend addresses these gaps by supporting multiple file transfers, direct peer-to-peer connections, customizable ports, and the option to store files and messages on a relay server (C2).
 
+
+# Update April 8 2025
+
+Finally fixed the chat. An interactive window has been added when the chat is activated. A unique code feature was also implemented, so instead of waiting for a random code, users can now use a specific code to share with another user.
+
+Thanks to a goMN and the talk "Creating a TUI chat app" by Michael Duren yesterday  https://github.com/michael-duren/tui-chat.git, I was able to get the chat option working in AirSend. I copied the interface Michael created and implemented it, since previously it only displayed messages like netcat.
+
+Michael also had a menu using a secret word to enable private connections. So instead of AirSend generating random codes, I added the option to set a secret word to access the chat with another person using the same word. I’ll work later on adding support for more people in the chat, but for now it’s just client and server.
+
+
+
+
 ### AirSend Default Configuration
 
 | Variable               | Description                                             | Default Value            |
