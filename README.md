@@ -26,6 +26,16 @@ For now, the chat supports only a client-client-server connection. I’ll work l
 
 
 
+# Execution
+
+With the new chat addition, run it like this:
+
+```bash
+go run main.go chat-window.go
+
+
+```
+
 
 
 
