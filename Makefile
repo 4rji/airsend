@@ -30,6 +30,9 @@ run:
 	$(GOTIDY)
 	$(GORUN) $(MAIN_FILES) $(ARGS)
 
+install:
+	$(GOCMD) install .
+
 clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_NAME)

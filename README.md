@@ -26,14 +26,32 @@ For now, the chat supports only a client-client-server connection. I’ll work l
 
 
 
+
+## Installation
+
+Install the latest AirSend binary directly with Go (Go 1.23 or newer):
+
+```bash
+go install github.com/4rji/airsend@latest
+```
+
+This drops the `airsend` binary in your `GOBIN` (defaults to `$GOPATH/bin`).
+
+Alternatively, from a local checkout you can run:
+
+```bash
+make install
+```
+
+Both approaches produce the same binary and make it easy to recreate the setup on another machine.
+
+
 # Execution
 
 With the new chat addition, run it like this:
 
 ```bash
-go run main.go chat-window.go
-
-
+go run .
 ```
 
 

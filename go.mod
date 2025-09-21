@@ -1,4 +1,4 @@
-module airsend
+module github.com/4rji/airsend
 
 go 1.23.0
 
