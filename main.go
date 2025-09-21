@@ -587,7 +587,7 @@ func sendFile(filePath, serverHost string, serverPort int, codeOverride string) 
     fmt.Printf("\nSent %s, waiting for confirmation... \033[94mCode:\033[0m %s\n", humanizeBytes(totalWritten), code)
     
     // Wait for confirmation
-    conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+    conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
     response, err := bufio.NewReader(conn).ReadString('\n')
     if err != nil {
         fmt.Printf("Error waiting for confirmation: %v\n", err)
