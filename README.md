@@ -37,6 +37,12 @@ go install github.com/4rji/airsend@latest
 
 This drops the `airsend` binary in your `GOBIN` (defaults to `$GOPATH/bin`).
 
+If the proxy cache still serves an older module path, force a fresh download:
+
+```bash
+GOPROXY=direct GOSUMDB=off go install github.com/4rji/airsend@latest
+```
+
 Alternatively, from a local checkout you can run:
 
 ```bash
