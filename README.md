@@ -29,7 +29,7 @@ For now, the chat supports only a client-client-server connection. I’ll work l
 
 ## Installation
 
-Install the latest AirSend binary directly with Go (Go 1.23 or newer):
+Install the latest AirSend binary directly with Go (Go 1.20 or newer):
 
 ```bash
 go install github.com/4rji/airsend@latest
