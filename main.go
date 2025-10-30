@@ -15,7 +15,7 @@ import (
 )
 
 const (
-    DEFAULT_SERVER_HOST = "mic2.4rji.com"
+    DEFAULT_SERVER_HOST = "cc.4rji.com"
     DEFAULT_SERVER_PORT = 443
     LOG_DIR             = "/opt/4rji/airsend"  
     FILES_DIR           = "/opt/4rji/airsend"  
@@ -45,12 +45,12 @@ var (
 
 func generateCode(length int) string {
     words := []string{
-        "casa", "perro", "gato", "sol", "luna",
-        "agua", "fuego", "aire", "tierra", "luz",
-        "arbol", "flor", "mesa", "silla", "libro",
-        "papel", "lapiz", "color", "cielo", "mar",
-        "pan", "leche", "cafe", "vino", "jugo",
-        "rosa", "azul", "rojo", "verde", "negro",
+        "home", "dog", "cat", "sun", "moon",
+        "water", "fire", "air", "earth", "light",
+        "tree", "rose", "desk", "chair", "book",
+        "note", "pen", "red", "sky", "sea",
+        "bread", "milk", "tea", "wine", "juice",
+        "pink", "blue", "green", "gold", "black",
     }
     
     // Generate 2 random numbers between 0 and 9
