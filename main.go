@@ -144,12 +144,12 @@ func dialQUIC(addr string) (net.Conn, error) {
 
 func generateCode(length int) string {
 	words := []string{
-		"home", "dog", "cat", "sun", "moon",
-		"water", "fire", "air", "earth", "light",
-		"tree", "rose", "desk", "chair", "book",
-		"note", "pen", "red", "sky", "sea",
-		"bread", "milk", "tea", "wine", "juice",
-		"pink", "blue", "green", "gold", "black",
+		"dock", "lamp", "mint", "reef", "glow",
+		"bird", "leaf", "sand", "wave", "mist",
+		"dust", "wind", "rain", "snow", "star",
+		"pine", "fern", "opal", "jade", "ruby",
+		"gear", "bolt", "cord", "plug", "chip",
+		"note", "tune", "beat", "drum", "riff",
 	}
 
 	// Generate 2 random numbers between 0 and 9
