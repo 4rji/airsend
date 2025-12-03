@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	DEFAULT_SERVER_HOST = "cc.4rji.com"
+	DEFAULT_SERVER_HOST = "mic2.4rji.com"
 	DEFAULT_SERVER_PORT = 443
 	LOG_DIR             = "/opt/4rji/airsend"
 	FILES_DIR           = "/opt/4rji/airsend"
