@@ -773,7 +773,16 @@ button:active{transform:translateY(0);}
   box-shadow:0 10px 30px rgba(0,0,0,0.25);
 }
 #status{margin:8px 0;color:var(--accent-2);}
-#chatLog{background:var(--panel);border:1px solid var(--border);color:var(--text);}
+#chatLog{
+  background:var(--panel);
+  border:1px solid var(--border);
+  color:var(--text);
+  min-height:240px;
+  max-height:360px;
+  width:100%;
+  overflow:auto;
+  white-space:pre-wrap;
+}
 a{color:var(--accent);}
 </style>
 </head><body>
@@ -803,8 +812,8 @@ a{color:var(--accent);}
     <button type="button" id="connectBtn">Connect</button>
   </form>
   <div style="margin:12px 0;">
-    <textarea id="chatLog" rows="10" style="width:100%;border-radius:10px;" readonly></textarea><br>
-    <input id="chatInput" placeholder="Type message" style="width:75%;border-radius:10px 0 0 10px;">
+    <textarea id="chatLog" rows="14" style="width:100%;border-radius:12px;" readonly></textarea><br>
+    <textarea id="chatInput" rows="3" placeholder="Type message" style="width:78%;border-radius:10px 0 0 10px;"></textarea>
     <button id="sendBtn" style="border-radius:0 10px 10px 0;">Send</button>
   </div>
 </div>
@@ -829,6 +838,10 @@ document.getElementById('downloadForm').onsubmit = (e) => {
 let ws;
 const log = document.getElementById('chatLog');
 const input = document.getElementById('chatInput');
+const appendLog = (prefix, text) => {
+  log.value += prefix + text + '\n';
+  log.scrollTop = log.scrollHeight;
+};
 document.getElementById('connectBtn').onclick = () => {
   const code = document.getElementById('chatCode').value.trim();
   if (!code) return alert('Code required');
@@ -839,16 +852,17 @@ document.getElementById('connectBtn').onclick = () => {
   ws.onopen = () => log.value += 'Connected\n';
   ws.onmessage = (ev) => {
     const text = typeof ev.data === 'string' ? ev.data : new TextDecoder().decode(ev.data);
-    log.value += text;
-    log.scrollTop = log.scrollHeight;
+    appendLog('Peer: ', text.trim());
   };
   ws.onclose = () => log.value += 'Disconnected\n';
   ws.onerror = (err) => log.value += 'Error: ' + err + '\n';
 };
 document.getElementById('sendBtn').onclick = () => {
   if (!ws || ws.readyState !== WebSocket.OPEN) return alert('Not connected');
-  const msg = input.value + '\n';
-  ws.send(new TextEncoder().encode(msg));
+  const msg = input.value;
+  if (!msg.trim()) return;
+  ws.send(new TextEncoder().encode(msg + '\n'));
+  appendLog('You: ', msg.trim());
   input.value = '';
 };
 </script>
