@@ -188,6 +188,11 @@ coming soon```
 coming soon
 ```
 
+### Windows binary
+```bash
+GOOS=windows GOARCH=amd64 go build -o airsend.exe .
+```
+
 
 ## Releases
 
