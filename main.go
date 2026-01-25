@@ -609,7 +609,7 @@ func startWebServer(addr string) {
 
 		file, header, err := r.FormFile("file")
 		if err != nil {
-			http.Error(w, "file requerido", http.StatusBadRequest)
+			http.Error(w, "file required", http.StatusBadRequest)
 			return
 		}
 		defer file.Close()
@@ -678,27 +678,27 @@ func startWebServer(addr string) {
 	}()
 }
 
-const indexHTML = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Airsend Web</title>
+const indexHTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Airsend Web</title>
 <style>body{font-family:system-ui, sans-serif;margin:32px;max-width:720px;}label{display:block;margin:12px 0 4px;}input,button{padding:8px 10px;font-size:14px;}pre{background:#f5f5f5;padding:12px;border-radius:6px;}</style>
 </head><body>
 <h1>Airsend Web</h1>
 <form id="uploadForm">
-  <label>Archivo</label><input name="file" type="file" required>
-  <label>Código (opcional para reutilizar)</label><input name="code" placeholder="ej: rio42">
-  <button type="submit">Enviar</button>
+  <label>File</label><input name="file" type="file" required>
+  <label>Code (optional to reuse)</label><input name="code" placeholder="e.g. rio42">
+  <button type="submit">Upload</button>
 </form>
 <p id="status"></p>
-<h3>Descargar</h3>
+<h3>Download</h3>
 <form id="downloadForm">
-  <label>Código</label><input name="code" required>
-  <button type="submit">Descargar</button>
+  <label>Code</label><input name="code" required>
+  <button type="submit">Download</button>
 </form>
 <script>
 const st = document.getElementById('status');
 document.getElementById('uploadForm').onsubmit = async (e) => {
   e.preventDefault();
   const data = new FormData(e.target);
-  st.textContent = 'Subiendo...';
+  st.textContent = 'Uploading...';
   try {
     const r = await fetch('/api/upload', {method:'POST', body:data});
     const t = await r.text();
