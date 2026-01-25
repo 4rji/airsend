@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
+	"golang.org/x/net/websocket"
 )
 
 const (
@@ -38,6 +39,7 @@ type PendingChat struct {
 	logFilename  string
 	relayStarted bool
 	cancelCh     chan bool
+	done         chan struct{}
 }
 
 type FileInfo struct {
@@ -192,7 +194,8 @@ func logData(logFilename, direction string, data []byte) {
 	f.Write(data)
 }
 
-func relay(src, dst net.Conn, logFilename, direction string) {
+func relay(src, dst net.Conn, logFilename, direction string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	fmt.Printf("Starting relay: %s from %s to %s\n",
 		direction, src.RemoteAddr(), dst.RemoteAddr())
 	defer func() {
@@ -416,12 +419,13 @@ func handleFileRecv(reader *bufio.Reader, conn net.Conn) {
 	}
 }
 
-func handleChatOrRelay(conn net.Conn, firstLine string) {
+// handleChatOrRelay returns a channel that closes when the chat session ends (or immediately on error).
+func handleChatOrRelay(conn net.Conn, firstLine string) chan struct{} {
 	code := strings.TrimSpace(firstLine)
 	if code == "" {
 		fmt.Println("Empty code received, closing connection")
 		conn.Close()
-		return
+		return nil
 	}
 
 	fmt.Printf("Connection with code: %s from %s\n", code, conn.RemoteAddr())
@@ -448,52 +452,64 @@ func handleChatOrRelay(conn net.Conn, firstLine string) {
 		}
 
 		// Setup relay in both directions
-		go relay(conn, chat.conn, chat.logFilename, "Client2 -> Client1")
-		go relay(chat.conn, conn, chat.logFilename, "Client1 -> Client2")
-	} else {
-		fmt.Printf("No pending connection for code %s, waiting for peer\n", code)
-		if _, err := os.Stat(LOG_DIR); os.IsNotExist(err) {
-			os.MkdirAll(LOG_DIR, 0755)
-		}
-		timestamp := time.Now().Format("20060102_150405")
-		logFilename := filepath.Join(LOG_DIR, fmt.Sprintf("session_%s_%s.log", code, timestamp))
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go relay(conn, chat.conn, chat.logFilename, "Client2 -> Client1", &wg)
+		go relay(chat.conn, conn, chat.logFilename, "Client1 -> Client2", &wg)
+		go func(done chan struct{}) {
+			wg.Wait()
+			close(done)
+		}(chat.done)
+		return chat.done
+	}
 
-		// Initialize cancel channel and store pending chat
-		cancelCh := make(chan bool)
-		pending[code] = PendingChat{conn: conn, logFilename: logFilename, cancelCh: cancelCh}
+	// No pending connection; set up waiting state.
+	done := make(chan struct{})
+	fmt.Printf("No pending connection for code %s, waiting for peer\n", code)
+	if _, err := os.Stat(LOG_DIR); os.IsNotExist(err) {
+		os.MkdirAll(LOG_DIR, 0755)
+	}
+	timestamp := time.Now().Format("20060102_150405")
+	logFilename := filepath.Join(LOG_DIR, fmt.Sprintf("session_%s_%s.log", code, timestamp))
+
+	// Initialize cancel channel and store pending chat
+	cancelCh := make(chan bool)
+	pending[code] = PendingChat{conn: conn, logFilename: logFilename, cancelCh: cancelCh, done: done}
+	pendingLock.Unlock()
+
+	// Send waiting message to client
+	if _, err := conn.Write([]byte("Waiting for peer to connect...\n")); err != nil {
+		fmt.Printf("Error sending waiting message to client: %v\n", err)
+		pendingLock.Lock()
+		delete(pending, code)
 		pendingLock.Unlock()
+		conn.Close()
+		close(done)
+		return done
+	}
 
-		// Send waiting message to client
-		if _, err := conn.Write([]byte("Waiting for peer to connect...\n")); err != nil {
-			fmt.Printf("Error sending waiting message to client: %v\n", err)
-			pendingLock.Lock()
-			delete(pending, code)
-			pendingLock.Unlock()
-			conn.Close()
-			return
-		}
-
-		// Start keep-alive for first client while waiting
-		go func(p PendingChat) {
-			ticker := time.NewTicker(30 * time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-p.cancelCh:
+	// Start keep-alive for first client while waiting
+	go func(p PendingChat) {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-p.cancelCh:
+				return
+			case <-ticker.C:
+				if _, err := p.conn.Write([]byte("Still waiting for peer...\n")); err != nil {
+					fmt.Printf("Error sending keep-alive to client with code %s: %v\n", code, err)
+					pendingLock.Lock()
+					delete(pending, code)
+					pendingLock.Unlock()
+					p.conn.Close()
+					close(p.done)
 					return
-				case <-ticker.C:
-					if _, err := p.conn.Write([]byte("Still waiting for peer...\n")); err != nil {
-						fmt.Printf("Error sending keep-alive to client with code %s: %v\n", code, err)
-						pendingLock.Lock()
-						delete(pending, code)
-						pendingLock.Unlock()
-						p.conn.Close()
-						return
-					}
 				}
 			}
-		}(pending[code])
-	}
+		}
+	}(pending[code])
+	return done
 }
 
 // handleClient dispatches incoming connections: file transfers or chat relays.
@@ -667,8 +683,27 @@ func startWebServer(addr string) {
 			return
 		}
 
+		// Force download instead of inline display
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileInfo.filename))
+		w.Header().Set("Content-Type", "application/octet-stream")
 		http.ServeFile(w, r, fileInfo.fullPath)
 	})
+
+	// WebSocket chat, compatible con -m/-mr (usa el mismo handleChatOrRelay).
+	mux.Handle("/ws", websocket.Handler(func(ws *websocket.Conn) {
+		code := ws.Request().URL.Query().Get("code")
+		if code == "" {
+			ws.Write([]byte("code query param required\n"))
+			ws.Close()
+			return
+		}
+		ws.PayloadType = websocket.BinaryFrame
+		done := handleChatOrRelay(ws, code)
+		if done == nil {
+			return
+		}
+		<-done // mantiene viva la conexión hasta que termine la sesión
+	}))
 
 	go func() {
 		fmt.Printf("Web UI escuchando en http://%s\n", addr)
@@ -693,6 +728,16 @@ const indexHTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><t
   <label>Code</label><input name="code" required>
   <button type="submit">Download</button>
 </form>
+<h3>Chat</h3>
+<form id="chatForm">
+  <label>Code</label><input id="chatCode" required>
+  <button type="button" id="connectBtn">Connect</button>
+</form>
+<div style="margin:12px 0;">
+  <textarea id="chatLog" rows="10" style="width:100%;" readonly></textarea><br>
+  <input id="chatInput" placeholder="Type message" style="width:80%;">
+  <button id="sendBtn">Send</button>
+</div>
 <script>
 const st = document.getElementById('status');
 document.getElementById('uploadForm').onsubmit = async (e) => {
@@ -709,6 +754,32 @@ document.getElementById('downloadForm').onsubmit = (e) => {
   e.preventDefault();
   const code = new FormData(e.target).get('code');
   window.location = '/api/download?code='+encodeURIComponent(code);
+};
+
+let ws;
+const log = document.getElementById('chatLog');
+const input = document.getElementById('chatInput');
+document.getElementById('connectBtn').onclick = () => {
+  const code = document.getElementById('chatCode').value.trim();
+  if (!code) return alert('Code required');
+  if (ws) ws.close();
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  ws = new WebSocket(proto + location.host + '/ws?code=' + encodeURIComponent(code));
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => log.value += 'Connected\n';
+  ws.onmessage = (ev) => {
+    const text = typeof ev.data === 'string' ? ev.data : new TextDecoder().decode(ev.data);
+    log.value += text;
+    log.scrollTop = log.scrollHeight;
+  };
+  ws.onclose = () => log.value += 'Disconnected\n';
+  ws.onerror = (err) => log.value += 'Error: ' + err + '\n';
+};
+document.getElementById('sendBtn').onclick = () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return alert('Not connected');
+  const msg = input.value + '\n';
+  ws.send(new TextEncoder().encode(msg));
+  input.value = '';
 };
 </script>
 </body></html>`
