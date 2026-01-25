@@ -62,6 +62,11 @@ var clientTLSConfig = &tls.Config{
 	NextProtos:         []string{"airsend"},
 }
 
+var quicConfig = &quic.Config{
+	KeepAlivePeriod: 2 * time.Minute,
+	MaxIdleTimeout:  10 * time.Minute,
+}
+
 type quicStreamConn struct {
 	quic.Stream
 	session quic.Connection
@@ -134,7 +139,7 @@ func generateTLSConfig() (*tls.Config, error) {
 }
 
 func dialQUIC(addr string) (net.Conn, error) {
-	conn, err := quic.DialAddr(context.Background(), addr, clientTLSConfig, nil)
+	conn, err := quic.DialAddr(context.Background(), addr, clientTLSConfig, quicConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -562,7 +567,7 @@ func runServer(host string, port int) {
 		fmt.Printf("Error preparando certificados TLS: %v\n", err)
 		os.Exit(1)
 	}
-	listener, err := quic.ListenAddr(addr, tlsConf, nil)
+	listener, err := quic.ListenAddr(addr, tlsConf, quicConfig)
 	if err != nil {
 		fmt.Printf("Error iniciando servidor QUIC en %s: %v\n", addr, err)
 		os.Exit(1)
@@ -714,29 +719,94 @@ func startWebServer(addr string) {
 }
 
 const indexHTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Airsend Web</title>
-<style>body{font-family:system-ui, sans-serif;margin:32px;max-width:720px;}label{display:block;margin:12px 0 4px;}input,button{padding:8px 10px;font-size:14px;}pre{background:#f5f5f5;padding:12px;border-radius:6px;}</style>
+<style>
+:root{
+  --bg:#282a36;
+  --panel:#2f3244;
+  --panel-2:#343748;
+  --text:#f8f8f2;
+  --muted:#8a8fa3;
+  --accent:#bd93f9;
+  --accent-2:#50fa7b;
+  --danger:#ff5555;
+  --border:#44475a;
+}
+*{box-sizing:border-box;}
+body{
+  margin:32px;
+  max-width:820px;
+  font-family:Inter,system-ui,-apple-system,sans-serif;
+  background:radial-gradient(circle at 15% 20%, #31354a 0, rgba(40,42,54,0) 30%),
+             radial-gradient(circle at 80% 0%, #2d3042 0, rgba(40,42,54,0) 28%),
+             var(--bg);
+  color:var(--text);
+}
+h1,h3{color:var(--text);margin-bottom:12px;}
+label{display:block;margin:12px 0 4px;color:var(--muted);font-size:13px;letter-spacing:0.02em;}
+input,button,textarea{
+  padding:10px 12px;
+  font-size:14px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:var(--panel);
+  color:var(--text);
+  outline:none;
+}
+input:focus,textarea:focus{border-color:var(--accent);}
+button{
+  cursor:pointer;
+  background:linear-gradient(135deg,var(--accent),#9a7bff);
+  color:#12121a;
+  border:none;
+  font-weight:600;
+  transition:transform 120ms ease, box-shadow 120ms ease;
+  box-shadow:0 8px 18px rgba(0,0,0,0.25);
+}
+button:hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(0,0,0,0.28);}
+button:active{transform:translateY(0);}
+.card{
+  background:var(--panel-2);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:16px;
+  margin-bottom:20px;
+  box-shadow:0 10px 30px rgba(0,0,0,0.25);
+}
+#status{margin:8px 0;color:var(--accent-2);}
+#chatLog{background:var(--panel);border:1px solid var(--border);color:var(--text);}
+a{color:var(--accent);}
+</style>
 </head><body>
 <h1>Airsend Web</h1>
-<form id="uploadForm">
-  <label>File</label><input name="file" type="file" required>
-  <label>Code (optional to reuse)</label><input name="code" placeholder="e.g. rio42">
-  <button type="submit">Upload</button>
-</form>
-<p id="status"></p>
-<h3>Download</h3>
-<form id="downloadForm">
-  <label>Code</label><input name="code" required>
-  <button type="submit">Download</button>
-</form>
-<h3>Chat</h3>
-<form id="chatForm">
-  <label>Code</label><input id="chatCode" required>
-  <button type="button" id="connectBtn">Connect</button>
-</form>
-<div style="margin:12px 0;">
-  <textarea id="chatLog" rows="10" style="width:100%;" readonly></textarea><br>
-  <input id="chatInput" placeholder="Type message" style="width:80%;">
-  <button id="sendBtn">Send</button>
+<div class="card">
+  <h3>Upload</h3>
+  <form id="uploadForm">
+    <label>File</label><input name="file" type="file" required>
+    <label>Code (optional to reuse)</label><input name="code" placeholder="e.g. rio42">
+    <button type="submit">Upload</button>
+  </form>
+  <p id="status"></p>
+</div>
+
+<div class="card">
+  <h3>Download</h3>
+  <form id="downloadForm">
+    <label>Code</label><input name="code" required>
+    <button type="submit">Download</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Chat</h3>
+  <form id="chatForm">
+    <label>Code</label><input id="chatCode" required>
+    <button type="button" id="connectBtn">Connect</button>
+  </form>
+  <div style="margin:12px 0;">
+    <textarea id="chatLog" rows="10" style="width:100%;border-radius:10px;" readonly></textarea><br>
+    <input id="chatInput" placeholder="Type message" style="width:75%;border-radius:10px 0 0 10px;">
+    <button id="sendBtn" style="border-radius:0 10px 10px 0;">Send</button>
+  </div>
 </div>
 <script>
 const st = document.getElementById('status');
@@ -1145,7 +1215,7 @@ func directReceive(listenHost string, listenPort int) {
 		fmt.Println("Error preparando certificados TLS:", err)
 		return
 	}
-	listener, err := quic.ListenAddr(addr, tlsConf, nil)
+	listener, err := quic.ListenAddr(addr, tlsConf, quicConfig)
 	if err != nil {
 		fmt.Println("Error escuchando en QUIC:", err)
 		return
