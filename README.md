@@ -1,3 +1,64 @@
+# Airsend (Web & Multi-User Chat Updates) 2026
+
+## What’s New
+- Web UI with Dracula-style dark theme (upload, download, chat).
+- WebSocket chat now supports multiple users per code (broadcast room).
+- Web chat sends with Enter (Shift+Enter for newline); shows “You/Peer” tags and auto-scrolls.
+- Web download forces save-as (no inline preview).
+- QUIC keepalive + 10 min idle timeout to avoid premature disconnects.
+
+## Run (web + QUIC)
+```bash
+# or, with sudo if you want QUIC on 443:
+sudo go run . -sw 0.0.0.0 3888 0.0.0.0 443
+#or (I dont use this one >)
+go run . -sw 0.0.0.0 3888 0.0.0.0 8443   # web on TCP 3888, QUIC on UDP 8443
+```
+
+## Ports
+- Web UI: **TCP** on the first host/port (default 3888).
+- QUIC (files & chat transport): **UDP** on the second host/port (default 443 or choose 8443).
+
+## Web UI Usage
+1. Open `http://<host>:3888`.
+2. Upload: choose file, optional code; you get back a code.
+3. Download: enter code, file downloads (forced attachment).
+4. Chat: enter code, connect; type and hit Enter to send. Multiple browsers/CLI clients with the same code share a room.
+
+## CLI Quick Reference
+- Send file via server mic2:  
+  `airsend -f file`  
+  Example: `airsend -f file.pdf`
+- Receive file:  
+  `airsend -r <code> `
+- Chat (client):  
+  `airsend -m `  
+  Example: `airsend -m room42 `
+
+## Notes & Tips
+- Ensure firewall opens **TCP 3888** for the web UI and **UDP** on your chosen QUIC port.
+- Large chat messages: web log is taller, auto-scrolls; CLI chat now scrolls and prioritizes incoming messages.
+- If binding to 443 fails, the process exits—use a high port (e.g., 8443) to keep both servers up.
+
+
+## CLI Quick Reference
+- Send file via LOCAL server:  
+  `go run . -f <host> <port> <file>`  
+  Example: `go run . -f  ServerIP 443 README.md `
+- Receive file:  
+  `go run . -r <code> <host> <port>`
+  Example: `go run . -r wave21 10.0.4.180 443`
+- Chat (client):  
+  `go run . -m <code> <host> <port>`  
+  Example: `go run . -m code 10.0.4.180 443`
+
+
+
+<img src="a.webp" width="400">
+
+
+
+
 The tutorial and usage steps are also available on my [https://docs.4rji.com/airsend](https://docs.4rji.com/airsend).
 
 

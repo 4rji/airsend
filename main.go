@@ -57,6 +57,16 @@ var (
 	activeRelays     = make(map[string]bool)
 )
 
+// ChatRoom permite más de dos usuarios por código.
+type ChatRoom struct {
+	code  string
+	conns map[net.Conn]struct{}
+	mu    sync.Mutex
+}
+
+var chatRooms = make(map[string]*ChatRoom)
+var chatRoomsLock sync.Mutex
+
 var clientTLSConfig = &tls.Config{
 	InsecureSkipVerify: true,
 	NextProtos:         []string{"airsend"},
@@ -433,87 +443,58 @@ func handleChatOrRelay(conn net.Conn, firstLine string) chan struct{} {
 		return nil
 	}
 
-	fmt.Printf("Connection with code: %s from %s\n", code, conn.RemoteAddr())
-
-	// Check for a waiting peer
-	pendingLock.Lock()
-	chat, exists := pending[code]
-	if exists {
-		fmt.Printf("Found pending connection for code %s, setting up relay\n", code)
-		// Signal waiting keep-alive goroutine to stop
-		if chat.cancelCh != nil {
-			chat.cancelCh <- true
-		}
-		delete(pending, code)
-		pendingLock.Unlock()
-
-		// Send confirmation to both clients
-		fmt.Printf("Sending confirmation to both clients\n")
-		if _, err := chat.conn.Write([]byte("Chat session started!\n")); err != nil {
-			fmt.Printf("Error sending confirmation to first client: %v\n", err)
-		}
-		if _, err := conn.Write([]byte("Chat session started!\n")); err != nil {
-			fmt.Printf("Error sending confirmation to second client: %v\n", err)
-		}
-
-		// Setup relay in both directions
-		var wg sync.WaitGroup
-		wg.Add(2)
-		go relay(conn, chat.conn, chat.logFilename, "Client2 -> Client1", &wg)
-		go relay(chat.conn, conn, chat.logFilename, "Client1 -> Client2", &wg)
-		go func(done chan struct{}) {
-			wg.Wait()
-			close(done)
-		}(chat.done)
-		return chat.done
+	// Join or create room
+	chatRoomsLock.Lock()
+	room, ok := chatRooms[code]
+	if !ok {
+		room = &ChatRoom{code: code, conns: make(map[net.Conn]struct{})}
+		chatRooms[code] = room
 	}
+	chatRoomsLock.Unlock()
 
-	// No pending connection; set up waiting state.
+	room.mu.Lock()
+	room.conns[conn] = struct{}{}
+	room.mu.Unlock()
+
 	done := make(chan struct{})
-	fmt.Printf("No pending connection for code %s, waiting for peer\n", code)
-	if _, err := os.Stat(LOG_DIR); os.IsNotExist(err) {
-		os.MkdirAll(LOG_DIR, 0755)
-	}
-	timestamp := time.Now().Format("20060102_150405")
-	logFilename := filepath.Join(LOG_DIR, fmt.Sprintf("session_%s_%s.log", code, timestamp))
+	conn.Write([]byte("Chat session started!\n"))
 
-	// Initialize cancel channel and store pending chat
-	cancelCh := make(chan bool)
-	pending[code] = PendingChat{conn: conn, logFilename: logFilename, cancelCh: cancelCh, done: done}
-	pendingLock.Unlock()
-
-	// Send waiting message to client
-	if _, err := conn.Write([]byte("Waiting for peer to connect...\n")); err != nil {
-		fmt.Printf("Error sending waiting message to client: %v\n", err)
-		pendingLock.Lock()
-		delete(pending, code)
-		pendingLock.Unlock()
-		conn.Close()
-		close(done)
-		return done
-	}
-
-	// Start keep-alive for first client while waiting
-	go func(p PendingChat) {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
+	// Reader: broadcast to others
+	go func() {
+		reader := bufio.NewReader(conn)
 		for {
-			select {
-			case <-p.cancelCh:
-				return
-			case <-ticker.C:
-				if _, err := p.conn.Write([]byte("Still waiting for peer...\n")); err != nil {
-					fmt.Printf("Error sending keep-alive to client with code %s: %v\n", code, err)
-					pendingLock.Lock()
-					delete(pending, code)
-					pendingLock.Unlock()
-					p.conn.Close()
-					close(p.done)
-					return
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err != io.EOF {
+					fmt.Printf("Chat read error (%s): %v\n", code, err)
+				}
+				break
+			}
+			room.mu.Lock()
+			for peer := range room.conns {
+				if peer == conn {
+					continue
+				}
+				peer.SetWriteDeadline(time.Now().Add(30 * time.Second))
+				if _, werr := peer.Write([]byte(line)); werr != nil {
+					fmt.Printf("Chat write error (%s): %v\n", code, werr)
 				}
 			}
+			room.mu.Unlock()
 		}
-	}(pending[code])
+		// cleanup on exit
+		room.mu.Lock()
+		delete(room.conns, conn)
+		empty := len(room.conns) == 0
+		room.mu.Unlock()
+		if empty {
+			chatRoomsLock.Lock()
+			delete(chatRooms, code)
+			chatRoomsLock.Unlock()
+		}
+		close(done)
+	}()
+
 	return done
 }
 
@@ -857,7 +838,7 @@ document.getElementById('connectBtn').onclick = () => {
   ws.onclose = () => log.value += 'Disconnected\n';
   ws.onerror = (err) => log.value += 'Error: ' + err + '\n';
 };
-document.getElementById('sendBtn').onclick = () => {
+const sendMsg = () => {
   if (!ws || ws.readyState !== WebSocket.OPEN) return alert('Not connected');
   const msg = input.value;
   if (!msg.trim()) return;
@@ -865,6 +846,13 @@ document.getElementById('sendBtn').onclick = () => {
   appendLog('You: ', msg.trim());
   input.value = '';
 };
+document.getElementById('sendBtn').onclick = sendMsg;
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMsg();
+  }
+});
 </script>
 </body></html>`
 
