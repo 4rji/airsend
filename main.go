@@ -8,12 +8,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
 	"math/big"
 	mrand "math/rand"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -577,6 +579,140 @@ func runServer(host string, port int) {
 	}
 }
 
+// startWebServer levanta una interfaz HTTP simple para subir/descargar archivos.
+// Reutiliza el mismo mapa pendingFiles para interoperar con el flujo CLI.
+func startWebServer(addr string) {
+	// Asegura que los directorios existen, igual que el servidor QUIC.
+	if err := os.MkdirAll(FILES_DIR, 0755); err != nil {
+		fmt.Printf("Error creando directorio de archivos %s: %v\n", FILES_DIR, err)
+		return
+	}
+
+	mux := http.NewServeMux()
+
+	// Página principal minimalista.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		io.WriteString(w, indexHTML)
+	})
+
+	// Endpoint de subida: acepta multipart/form-data con campo "file" y opcional "code".
+	mux.HandleFunc("/api/upload", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, "file requerido", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		code := r.FormValue("code")
+		if code == "" {
+			code = generateCode(6)
+		}
+
+		serverFilename := fmt.Sprintf("%s_%s", code, header.Filename)
+		fullPath := filepath.Join(FILES_DIR, serverFilename)
+		dst, err := os.Create(fullPath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer dst.Close()
+
+		n, err := io.Copy(dst, file)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Guarda en el mapa compartido.
+		pendingFilesLock.Lock()
+		pendingFiles[code] = FileInfo{filename: header.Filename, filesize: n, fullPath: fullPath}
+		pendingFilesLock.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"code":     code,
+			"filename": header.Filename,
+			"bytes":    n,
+		})
+	})
+
+	// Endpoint de descarga por código.
+	mux.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
+		code := r.URL.Query().Get("code")
+		if code == "" {
+			http.Error(w, "code requerido", http.StatusBadRequest)
+			return
+		}
+
+		pendingFilesLock.Lock()
+		fileInfo, ok := pendingFiles[code]
+		if ok {
+			delete(pendingFiles, code) // consumo único, igual que el flujo CLI
+		}
+		pendingFilesLock.Unlock()
+
+		if !ok {
+			http.Error(w, "code not found", http.StatusNotFound)
+			return
+		}
+
+		http.ServeFile(w, r, fileInfo.fullPath)
+	})
+
+	go func() {
+		fmt.Printf("Web UI escuchando en http://%s\n", addr)
+		if err := http.ListenAndServe(addr, mux); err != nil {
+			fmt.Printf("Web server error: %v\n", err)
+		}
+	}()
+}
+
+const indexHTML = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Airsend Web</title>
+<style>body{font-family:system-ui, sans-serif;margin:32px;max-width:720px;}label{display:block;margin:12px 0 4px;}input,button{padding:8px 10px;font-size:14px;}pre{background:#f5f5f5;padding:12px;border-radius:6px;}</style>
+</head><body>
+<h1>Airsend Web</h1>
+<form id="uploadForm">
+  <label>Archivo</label><input name="file" type="file" required>
+  <label>Código (opcional para reutilizar)</label><input name="code" placeholder="ej: rio42">
+  <button type="submit">Enviar</button>
+</form>
+<p id="status"></p>
+<h3>Descargar</h3>
+<form id="downloadForm">
+  <label>Código</label><input name="code" required>
+  <button type="submit">Descargar</button>
+</form>
+<script>
+const st = document.getElementById('status');
+document.getElementById('uploadForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const data = new FormData(e.target);
+  st.textContent = 'Subiendo...';
+  try {
+    const r = await fetch('/api/upload', {method:'POST', body:data});
+    const t = await r.text();
+    st.textContent = t;
+  } catch(err) { st.textContent = 'Error: '+err; }
+};
+document.getElementById('downloadForm').onsubmit = (e) => {
+  e.preventDefault();
+  const code = new FormData(e.target).get('code');
+  window.location = '/api/download?code='+encodeURIComponent(code);
+};
+</script>
+</body></html>`
+
 func sendFile(filePath, serverHost string, serverPort int, codeOverride string) {
 	// Validate file exists and get size
 	info, err := os.Stat(filePath)
@@ -1015,6 +1151,8 @@ func printUsage() {
 	fmt.Println("  \033[94mMessage (recv):\033[0m     airsend -mr <code> <host> Port ")
 	fmt.Println("  \033[94mDirect send:\033[0m        airsend -d <file> [target-host[:port]]")
 	fmt.Println("  \033[94mDirect receive:\033[0m     airsend -ds <listen-host> <port>")
+	fmt.Println("  \033[94mServer + web:\033[0m      airsend -sw [web-host] [web-port] [quic-host] [quic-port]")
+	fmt.Println("                          defaults: web 0.0.0.0:3888, quic 0.0.0.0:443")
 }
 
 func main() {
@@ -1037,6 +1175,33 @@ func main() {
 			}
 		}
 		runServer(host, port)
+	case "-sw":
+		webHost := "0.0.0.0"
+		webPort := 3888
+		quicHost := webHost             // por defecto escucha en la misma IP que el web
+		quicPort := DEFAULT_SERVER_PORT // 443
+
+		if len(os.Args) >= 3 {
+			webHost = os.Args[2]
+			quicHost = webHost // si no se pasa quicHost, igual al webHost
+		}
+		if len(os.Args) >= 4 {
+			if p, err := strconv.Atoi(os.Args[3]); err == nil {
+				webPort = p
+			}
+		}
+		if len(os.Args) >= 5 {
+			quicHost = os.Args[4]
+		}
+		if len(os.Args) >= 6 {
+			if p, err := strconv.Atoi(os.Args[5]); err == nil {
+				quicPort = p
+			}
+		}
+
+		go runServer(quicHost, quicPort)
+		startWebServer(fmt.Sprintf("%s:%d", webHost, webPort))
+		select {} // block forever
 	case "-f":
 		args := os.Args[2:]
 		host := DEFAULT_SERVER_HOST
