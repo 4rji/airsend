@@ -78,11 +78,11 @@ var quicConfig = &quic.Config{
 }
 
 type quicStreamConn struct {
-	quic.Stream
-	session quic.Connection
+	*quic.Stream
+	session *quic.Conn
 }
 
-func newQUICStreamConn(session quic.Connection, stream quic.Stream) *quicStreamConn {
+func newQUICStreamConn(session *quic.Conn, stream *quic.Stream) *quicStreamConn {
 	return &quicStreamConn{Stream: stream, session: session}
 }
 
@@ -567,7 +567,7 @@ func runServer(host string, port int) {
 			fmt.Printf("Error aceptando conexión QUIC: %v\n", err)
 			continue
 		}
-		go func(session quic.Connection) {
+		go func(session *quic.Conn) {
 			stream, err := session.AcceptStream(context.Background())
 			if err != nil {
 				fmt.Printf("Error aceptando stream QUIC: %v\n", err)
@@ -1229,7 +1229,7 @@ func directReceive(listenHost string, listenPort int) {
 			fmt.Printf("Error aceptando conexión QUIC: %v\n", err)
 			continue
 		}
-		go func(session quic.Connection) {
+		go func(session *quic.Conn) {
 			stream, err := session.AcceptStream(context.Background())
 			if err != nil {
 				fmt.Printf("Error aceptando stream QUIC: %v\n", err)
