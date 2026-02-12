@@ -1,4 +1,12 @@
-# February 12, 2026 — Redesign of the Website, Text Paste & Send Added, and New Domain `airsend.us`
+## February 12, 2026 Update
+
+### New Features
+- Redesign of the Website
+- Text Paste & Send Added (send scripts/text directly from the web UI)
+- New Domain Added: `airsend.us`
+- Connection logging added: all web/QUIC connection events are saved to `connections.log`
+
+![Website Redesign](a.webp)
 
 # Airsend (Web & Multi-User Chat Updates) 2026
 
