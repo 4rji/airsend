@@ -32,6 +32,7 @@ const (
 	DEFAULT_SERVER_PORT = 443
 	DEFAULT_LOG_DIR     = "/opt/4rji/airsend"
 	DEFAULT_FILES_DIR   = "/opt/4rji/airsend"
+	CONNECTIONS_LOG     = "connections.log"
 )
 
 type PendingChat struct {
@@ -54,6 +55,7 @@ var (
 	pendingFiles     = make(map[string]FileInfo)
 	pendingFilesLock sync.Mutex
 	logLock          sync.Mutex
+	connectionLogMu  sync.Mutex
 	activeRelays     = make(map[string]bool)
 	logDir           = DEFAULT_LOG_DIR
 	filesDir         = DEFAULT_FILES_DIR
@@ -264,6 +266,126 @@ func logData(logFilename, direction string, data []byte) {
 	header := fmt.Sprintf("\n[%s %s]:\n", time.Now().Format("2006-01-02 15:04:05"), direction)
 	f.WriteString(header)
 	f.Write(data)
+}
+
+func trimForLog(value string, max int) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= max {
+		return value
+	}
+	return value[:max] + "..."
+}
+
+func normalizeClientIP(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+
+	value = strings.Trim(value, "\"'")
+	lower := strings.ToLower(value)
+	if strings.HasPrefix(lower, "for=") {
+		value = strings.TrimSpace(value[4:])
+		value = strings.Trim(value, "\"'")
+	}
+	if strings.EqualFold(value, "unknown") {
+		return ""
+	}
+
+	// IPv6 in RFC 7239 format: [2001:db8::1]:1234 or [2001:db8::1]
+	if strings.HasPrefix(value, "[") {
+		if end := strings.Index(value, "]"); end > 1 {
+			candidate := value[1:end]
+			if ip := net.ParseIP(candidate); ip != nil {
+				return ip.String()
+			}
+			return candidate
+		}
+	}
+
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		if ip := net.ParseIP(host); ip != nil {
+			return ip.String()
+		}
+		return host
+	}
+
+	if ip := net.ParseIP(value); ip != nil {
+		return ip.String()
+	}
+	return value
+}
+
+func firstValidClientIP(values ...string) string {
+	for _, raw := range values {
+		if raw == "" {
+			continue
+		}
+		for _, part := range strings.Split(raw, ",") {
+			if ip := normalizeClientIP(part); ip != "" {
+				return ip
+			}
+		}
+	}
+	return ""
+}
+
+func clientAddressFromRequest(r *http.Request) string {
+	if ip := firstValidClientIP(
+		r.Header.Get("CF-Connecting-IP"),
+		r.Header.Get("True-Client-IP"),
+		r.Header.Get("X-Real-IP"),
+		r.Header.Get("X-Forwarded-For"),
+	); ip != "" {
+		return ip
+	}
+
+	// RFC 7239 Forwarded: for=1.2.3.4;proto=https
+	forwarded := strings.TrimSpace(r.Header.Get("Forwarded"))
+	if forwarded != "" {
+		for _, segment := range strings.Split(forwarded, ";") {
+			keyVal := strings.SplitN(strings.TrimSpace(segment), "=", 2)
+			if len(keyVal) == 2 && strings.EqualFold(strings.TrimSpace(keyVal[0]), "for") {
+				if ip := firstValidClientIP(keyVal[1]); ip != "" {
+					return ip
+				}
+			}
+		}
+	}
+
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	if ip := normalizeClientIP(r.RemoteAddr); ip != "" {
+		return ip
+	}
+	return "unknown"
+}
+
+func logConnectionEvent(transport, remoteAddr, detail string) {
+	connectionLogMu.Lock()
+	defer connectionLogMu.Unlock()
+
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		fmt.Printf("Error creating log dir %s: %v\n", logDir, err)
+		return
+	}
+
+	logPath := filepath.Join(logDir, CONNECTIONS_LOG)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error opening connection log %s: %v\n", logPath, err)
+		return
+	}
+	defer f.Close()
+
+	line := fmt.Sprintf("[%s] transport=%s remote=%s detail=%s\n",
+		time.Now().Format("2006-01-02 15:04:05"),
+		trimForLog(transport, 32),
+		trimForLog(remoteAddr, 128),
+		trimForLog(detail, 512),
+	)
+	_, _ = f.WriteString(line)
 }
 
 func relay(src, dst net.Conn, logFilename, direction string, wg *sync.WaitGroup) {
@@ -558,31 +680,40 @@ func handleChatOrRelay(conn net.Conn, firstLine string) chan struct{} {
 // handleClient dispatches incoming connections: file transfers or chat relays.
 // For chat relays, connection lifecycle is managed by relay functions.
 func handleClient(conn net.Conn) {
+	remote := conn.RemoteAddr().String()
+
 	// Read the command line (first message)
 	reader := bufio.NewReader(conn)
 	firstLine, err := readLine(reader)
 	if err != nil || firstLine == "" {
+		logConnectionEvent("quic", remote, "empty_or_invalid_header")
 		conn.Close()
 		return
 	}
+
+	logConnectionEvent("quic", remote, fmt.Sprintf("first_line=%s", firstLine))
 	// File transfer commands
 	if strings.HasPrefix(firstLine, "FILE") {
 		parts := strings.Split(firstLine, " ")
 		if len(parts) >= 2 {
 			mode := parts[1]
 			if mode == "SEND" {
+				logConnectionEvent("quic", remote, "command=FILE SEND")
 				handleFileSend("FILE SEND", reader, conn)
 				return
 			} else if mode == "RECV" {
+				logConnectionEvent("quic", remote, "command=FILE RECV")
 				handleFileRecv(reader, conn)
 				return
 			}
 		}
 		// Unrecognized FILE command
+		logConnectionEvent("quic", remote, fmt.Sprintf("command=FILE unknown line=%s", firstLine))
 		conn.Close()
 		return
 	}
 	// Chat or relay: do not close here; relay() will clean up
+	logConnectionEvent("quic", remote, fmt.Sprintf("command=CHAT code=%s", firstLine))
 	handleChatOrRelay(conn, firstLine)
 }
 
@@ -633,6 +764,7 @@ func runServer(host string, port int) {
 			}
 			conn := newQUICStreamConn(session, stream)
 			fmt.Printf("Nueva conexión desde %s\n", conn.RemoteAddr().String())
+			logConnectionEvent("quic", conn.RemoteAddr().String(), "stream_accepted")
 			handleClient(conn)
 		}(sess)
 	}
@@ -700,17 +832,23 @@ func startWebServer(addr string) {
 		fmt.Printf("Error creando directorio de archivos %s: %v\n", filesDir, err)
 		return
 	}
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		fmt.Printf("Error creando directorio de logs %s: %v\n", logDir, err)
+		return
+	}
 
 	mux := http.NewServeMux()
 
 	// Página principal minimalista.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("%s %s", r.Method, r.URL.Path))
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		io.WriteString(w, indexHTML)
 	})
 
 	// Endpoint de subida: acepta multipart/form-data con campo "file" y opcional "code".
 	mux.HandleFunc("/api/upload", func(w http.ResponseWriter, r *http.Request) {
+		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("%s %s", r.Method, r.URL.Path))
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -732,6 +870,7 @@ func startWebServer(addr string) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("upload_saved code=%s file=%s bytes=%d", code, info.filename, info.filesize))
 		recvHost, recvPort, recvCmd := buildReceiveCommand(r, code)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -747,6 +886,7 @@ func startWebServer(addr string) {
 
 	// Endpoint para pegar texto/script desde web y mandarlo como archivo AirSend.
 	mux.HandleFunc("/api/paste", func(w http.ResponseWriter, r *http.Request) {
+		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("%s %s", r.Method, r.URL.Path))
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -789,6 +929,7 @@ func startWebServer(addr string) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("paste_saved code=%s file=%s bytes=%d", code, info.filename, info.filesize))
 		recvHost, recvPort, recvCmd := buildReceiveCommand(r, code)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -805,6 +946,7 @@ func startWebServer(addr string) {
 
 	// Endpoint de descarga por código.
 	mux.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
+		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("%s %s code=%s", r.Method, r.URL.Path, r.URL.Query().Get("code")))
 		code := r.URL.Query().Get("code")
 		if code == "" {
 			http.Error(w, "code requerido", http.StatusBadRequest)
@@ -819,9 +961,11 @@ func startWebServer(addr string) {
 		pendingFilesLock.Unlock()
 
 		if !ok {
+			logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("download_miss code=%s", code))
 			http.Error(w, "code not found", http.StatusNotFound)
 			return
 		}
+		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("download_hit code=%s file=%s bytes=%d", code, fileInfo.filename, fileInfo.filesize))
 
 		// Force download instead of inline display
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileInfo.filename))
@@ -831,12 +975,15 @@ func startWebServer(addr string) {
 
 	// WebSocket chat, compatible con -m/-mr (usa el mismo handleChatOrRelay).
 	mux.Handle("/ws", websocket.Handler(func(ws *websocket.Conn) {
+		logConnectionEvent("ws", ws.Request().RemoteAddr, fmt.Sprintf("connect path=%s", ws.Request().URL.Path))
 		code := ws.Request().URL.Query().Get("code")
 		if code == "" {
+			logConnectionEvent("ws", ws.Request().RemoteAddr, "connect_rejected missing_code")
 			ws.Write([]byte("code query param required\n"))
 			ws.Close()
 			return
 		}
+		logConnectionEvent("ws", ws.Request().RemoteAddr, fmt.Sprintf("connect_ok code=%s", code))
 		ws.PayloadType = websocket.BinaryFrame
 		done := handleChatOrRelay(ws, code)
 		if done == nil {
@@ -957,8 +1104,8 @@ button:active{transform:translateY(0);}
   font-size:17px;
   font-weight:800;
   letter-spacing:0.08em;
-  color:#081118;
-  background:linear-gradient(135deg,#8be9fd,#50fa7b);
+  color:#eef4ff;
+  background:linear-gradient(135deg,#6f87a9,#4e6483);
 }
 #pasteText{
   min-height:180px;
