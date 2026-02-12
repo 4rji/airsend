@@ -1105,7 +1105,15 @@ button:active{transform:translateY(0);}
   color:#09121a;
 }
 #status,#pasteStatus{margin:10px 0;color:var(--accent-2);}
-#uploadCode{margin-top:8px;}
+.form-actions{
+  margin-top:10px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;
+}
+#uploadCode{margin-top:0;}
+#pasteCodeOut{margin-top:0;}
 .upload-meta{
   line-height:1.15;
 }
@@ -1121,15 +1129,21 @@ button:active{transform:translateY(0);}
   color:#8bf9a9;
 }
 .result-code{
-  display:inline-block;
-  padding:8px 14px;
-  border-radius:10px;
+  display:inline;
+  padding:0;
+  border-radius:0;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  font-size:17px;
+  font-size:21px;
   font-weight:800;
   letter-spacing:0.08em;
-  color:#eef4ff;
-  background:linear-gradient(135deg,#6f87a9,#4e6483);
+  color:#ffffff;
+  background:none;
+}
+.code-label{
+  font-size:13px;
+  color:#d6d9e6;
+  margin-right:6px;
+  vertical-align:baseline;
 }
 #pasteText{
   min-height:180px;
@@ -1176,10 +1190,12 @@ a{color:var(--accent);}
       <form id="uploadForm">
         <label>File</label><input name="file" type="file" required>
         <label>Code (optional to reuse)</label><input name="code" placeholder="e.g. rio42">
-        <button class="btn-upload" type="submit">Upload</button>
+        <div class="form-actions">
+          <button class="btn-upload" type="submit">Upload</button>
+          <div id="uploadCode"></div>
+        </div>
       </form>
       <p id="status"></p>
-      <div id="uploadCode"></div>
     </div>
     <div class="file-block">
       <h4>Download File</h4>
@@ -1197,7 +1213,10 @@ a{color:var(--accent);}
     <label>Filename (optional)</label><input id="pasteFilename" name="filename" placeholder="script.sh">
     <label>Code (optional to reuse)</label><input id="pasteCode" name="code" placeholder="e.g. wave21">
     <label>Text to send</label><textarea id="pasteText" name="text" required></textarea>
-    <button type="submit">Send text and generate code</button>
+    <div class="form-actions">
+      <button type="submit">Send text and generate code</button>
+      <div id="pasteCodeOut"></div>
+    </div>
   </form>
   <p id="pasteStatus"></p>
   <a id="pasteDownloadLink" href="#" style="display:none;">Download this file now</a>
@@ -1220,6 +1239,7 @@ a{color:var(--accent);}
 <script>
 const statusEl = document.getElementById('status');
 const uploadCodeEl = document.getElementById('uploadCode');
+const pasteCodeOutEl = document.getElementById('pasteCodeOut');
 const pasteStatusEl = document.getElementById('pasteStatus');
 const pasteDownloadLink = document.getElementById('pasteDownloadLink');
 const downloadCodeInput = document.getElementById('downloadCode');
@@ -1251,7 +1271,7 @@ document.getElementById('uploadForm').onsubmit = async (e) => {
     const safeFile = escapeHtml(parsed.data.filename || '');
     const safeCode = escapeHtml(parsed.data.code || '');
     statusEl.innerHTML = '<div class="upload-meta"><div class="upload-meta-label">UPLOADED</div><div class="upload-meta-file">' + safeFile + '</div></div>';
-    uploadCodeEl.innerHTML = '<span class="result-code">' + safeCode + '</span>';
+    uploadCodeEl.innerHTML = '<span class="code-label">Code:</span><span class="result-code">' + safeCode + '</span>';
   } catch(err) {
     statusEl.textContent = 'Error: ' + err;
     uploadCodeEl.innerHTML = '';
@@ -1262,6 +1282,7 @@ document.getElementById('pasteForm').onsubmit = async (e) => {
   e.preventDefault();
   pasteStatusEl.textContent = 'Sending text...';
   pasteDownloadLink.style.display = 'none';
+  pasteCodeOutEl.innerHTML = '';
 
   const payload = {
     filename: document.getElementById('pasteFilename').value,
@@ -1282,11 +1303,14 @@ document.getElementById('pasteForm').onsubmit = async (e) => {
     }
 
     downloadCodeInput.value = parsed.data.code;
-    pasteStatusEl.textContent = 'Code: ' + parsed.data.code;
+    pasteStatusEl.textContent = '';
+    const safeCode = escapeHtml(parsed.data.code || '');
+    pasteCodeOutEl.innerHTML = '<span class="code-label">Code:</span><span class="result-code">' + safeCode + '</span>';
     pasteDownloadLink.href = '/api/download?code=' + encodeURIComponent(parsed.data.code);
     pasteDownloadLink.style.display = 'inline';
   } catch(err) {
     pasteStatusEl.textContent = 'Error: ' + err;
+    pasteCodeOutEl.innerHTML = '';
   }
 };
 

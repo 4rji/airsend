@@ -1,3 +1,5 @@
+# February 12, 2026 — Redesign of the Website, Text Paste & Send Added, and New Domain `airsend.us`
+
 # Airsend (Web & Multi-User Chat Updates) 2026
 
 ## What’s New
