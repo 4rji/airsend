@@ -362,7 +362,33 @@ func clientAddressFromRequest(r *http.Request) string {
 	return "unknown"
 }
 
+func httpRemoteDetails(r *http.Request) (string, string) {
+	raw := strings.TrimSpace(r.RemoteAddr)
+	ip := clientAddressFromRequest(r)
+	if ip == "" || ip == "unknown" {
+		if host, _, err := net.SplitHostPort(raw); err == nil && host != "" {
+			ip = host
+		} else if raw != "" {
+			ip = raw
+		} else {
+			ip = "unknown"
+		}
+	}
+	if raw == "" {
+		raw = "unknown"
+	}
+	return ip, raw
+}
+
 func logConnectionEvent(transport, remoteAddr, detail string) {
+	line := fmt.Sprintf("[%s] transport=%s remote=%s detail=%s\n",
+		time.Now().Format("2006-01-02 15:04:05"),
+		trimForLog(transport, 32),
+		trimForLog(remoteAddr, 128),
+		trimForLog(detail, 512),
+	)
+	fmt.Printf("[CONN] %s", line)
+
 	connectionLogMu.Lock()
 	defer connectionLogMu.Unlock()
 
@@ -379,12 +405,6 @@ func logConnectionEvent(transport, remoteAddr, detail string) {
 	}
 	defer f.Close()
 
-	line := fmt.Sprintf("[%s] transport=%s remote=%s detail=%s\n",
-		time.Now().Format("2006-01-02 15:04:05"),
-		trimForLog(transport, 32),
-		trimForLog(remoteAddr, 128),
-		trimForLog(detail, 512),
-	)
 	_, _ = f.WriteString(line)
 }
 
@@ -841,14 +861,16 @@ func startWebServer(addr string) {
 
 	// Página principal minimalista.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("%s %s", r.Method, r.URL.Path))
+		clientIP, rawRemote := httpRemoteDetails(r)
+		logConnectionEvent("http", clientIP, fmt.Sprintf("%s %s raw_remote=%s", r.Method, r.URL.Path, rawRemote))
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		io.WriteString(w, indexHTML)
 	})
 
 	// Endpoint de subida: acepta multipart/form-data con campo "file" y opcional "code".
 	mux.HandleFunc("/api/upload", func(w http.ResponseWriter, r *http.Request) {
-		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("%s %s", r.Method, r.URL.Path))
+		clientIP, rawRemote := httpRemoteDetails(r)
+		logConnectionEvent("http", clientIP, fmt.Sprintf("%s %s raw_remote=%s", r.Method, r.URL.Path, rawRemote))
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -870,7 +892,7 @@ func startWebServer(addr string) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("upload_saved code=%s file=%s bytes=%d", code, info.filename, info.filesize))
+		logConnectionEvent("http", clientIP, fmt.Sprintf("upload_saved code=%s file=%s bytes=%d raw_remote=%s", code, info.filename, info.filesize, rawRemote))
 		recvHost, recvPort, recvCmd := buildReceiveCommand(r, code)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -886,7 +908,8 @@ func startWebServer(addr string) {
 
 	// Endpoint para pegar texto/script desde web y mandarlo como archivo AirSend.
 	mux.HandleFunc("/api/paste", func(w http.ResponseWriter, r *http.Request) {
-		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("%s %s", r.Method, r.URL.Path))
+		clientIP, rawRemote := httpRemoteDetails(r)
+		logConnectionEvent("http", clientIP, fmt.Sprintf("%s %s raw_remote=%s", r.Method, r.URL.Path, rawRemote))
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -929,7 +952,7 @@ func startWebServer(addr string) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("paste_saved code=%s file=%s bytes=%d", code, info.filename, info.filesize))
+		logConnectionEvent("http", clientIP, fmt.Sprintf("paste_saved code=%s file=%s bytes=%d raw_remote=%s", code, info.filename, info.filesize, rawRemote))
 		recvHost, recvPort, recvCmd := buildReceiveCommand(r, code)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -946,7 +969,8 @@ func startWebServer(addr string) {
 
 	// Endpoint de descarga por código.
 	mux.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
-		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("%s %s code=%s", r.Method, r.URL.Path, r.URL.Query().Get("code")))
+		clientIP, rawRemote := httpRemoteDetails(r)
+		logConnectionEvent("http", clientIP, fmt.Sprintf("%s %s code=%s raw_remote=%s", r.Method, r.URL.Path, r.URL.Query().Get("code"), rawRemote))
 		code := r.URL.Query().Get("code")
 		if code == "" {
 			http.Error(w, "code requerido", http.StatusBadRequest)
@@ -961,11 +985,11 @@ func startWebServer(addr string) {
 		pendingFilesLock.Unlock()
 
 		if !ok {
-			logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("download_miss code=%s", code))
+			logConnectionEvent("http", clientIP, fmt.Sprintf("download_miss code=%s raw_remote=%s", code, rawRemote))
 			http.Error(w, "code not found", http.StatusNotFound)
 			return
 		}
-		logConnectionEvent("http", clientAddressFromRequest(r), fmt.Sprintf("download_hit code=%s file=%s bytes=%d", code, fileInfo.filename, fileInfo.filesize))
+		logConnectionEvent("http", clientIP, fmt.Sprintf("download_hit code=%s file=%s bytes=%d raw_remote=%s", code, fileInfo.filename, fileInfo.filesize, rawRemote))
 
 		// Force download instead of inline display
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileInfo.filename))
