@@ -882,8 +882,8 @@ func sendFile(filePath, serverHost string, serverPort int, codeOverride string) 
 	}
 	defer conn.Close()
 
-	// Set timeouts
-	conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
+	// Refresh per-write deadlines while transferring so slow/large sends don't hit a fixed total timeout.
+	const writeTimeout = 30 * time.Second
 
 	// Send headers with buffered writer
 	writer := bufio.NewWriter(conn)
@@ -895,11 +895,13 @@ func sendFile(filePath, serverHost string, serverPort int, codeOverride string) 
 	}
 
 	for _, header := range headers {
+		_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 		if _, err := writer.WriteString(header + "\n"); err != nil {
 			fmt.Printf("Error sending header '%s': %v\n", header, err)
 			return
 		}
 	}
+	_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 	if err := writer.Flush(); err != nil {
 		fmt.Printf("Error flushing headers: %v\n", err)
 		return
@@ -925,6 +927,7 @@ func sendFile(filePath, serverHost string, serverPort int, codeOverride string) 
 	for totalWritten < info.Size() {
 		n, err := reader.Read(buf)
 		if n > 0 {
+			_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 			written, writeErr := writer.Write(buf[:n])
 			if writeErr != nil {
 				fmt.Printf("\nError sending file data: %v\n", writeErr)
@@ -944,6 +947,7 @@ func sendFile(filePath, serverHost string, serverPort int, codeOverride string) 
 		}
 	}
 
+	_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 	if err := writer.Flush(); err != nil {
 		fmt.Printf("\nError flushing file data: %v\n", err)
 		return
@@ -1174,9 +1178,15 @@ func directSend(filePath, targetHost string, targetPort int) {
 	}
 	defer conn.Close()
 
+	// Refresh per-write deadlines while transferring so slow/large sends don't hang indefinitely.
+	const writeTimeout = 30 * time.Second
+
 	writer := bufio.NewWriter(conn)
+	_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 	writer.WriteString(filepath.Base(filePath) + "\n")
+	_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 	writer.WriteString(fmt.Sprintf("%d\n", info.Size()))
+	_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 	writer.Flush()
 
 	file, err := os.Open(filePath)
@@ -1195,6 +1205,7 @@ func directSend(filePath, targetHost string, targetPort int) {
 	for totalWritten < info.Size() {
 		n, err := file.Read(buf)
 		if n > 0 {
+			_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 			written, writeErr := conn.Write(buf[:n])
 			if writeErr != nil {
 				fmt.Printf("\nError sending file data: %v\n", writeErr)
