@@ -1,0 +1,22 @@
+services:
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: caddy
+    restart: unless-stopped
+    env_file:
+      - "rename-to-.env .txt"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - caddy-config:/config
+      - caddy-data:/data
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+
+volumes:
+  caddy-config:
+  caddy-data:

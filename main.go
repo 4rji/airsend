@@ -30,8 +30,9 @@ import (
 const (
 	DEFAULT_SERVER_HOST = "airsend.us"
 	DEFAULT_SERVER_PORT = 443
-	LOG_DIR             = "/opt/4rji/airsend"
-	FILES_DIR           = "/opt/4rji/airsend"
+	DEFAULT_LOG_DIR     = "/opt/4rji/airsend"
+	DEFAULT_FILES_DIR   = "/opt/4rji/airsend"
+	CONNECTIONS_LOG     = "connections.log"
 )
 
 type PendingChat struct {
@@ -54,7 +55,12 @@ var (
 	pendingFiles     = make(map[string]FileInfo)
 	pendingFilesLock sync.Mutex
 	logLock          sync.Mutex
+	connectionLogMu  sync.Mutex
 	activeRelays     = make(map[string]bool)
+	logDir           = DEFAULT_LOG_DIR
+	filesDir         = DEFAULT_FILES_DIR
+	webQUICHost      = DEFAULT_SERVER_HOST
+	webQUICPort      = DEFAULT_SERVER_PORT
 )
 
 // ChatRoom permite más de dos usuarios por código.
@@ -182,6 +188,59 @@ func generateCode(length int) string {
 	return fmt.Sprintf("%s%d%d", word, numbers[0], numbers[1])
 }
 
+func resolveStorageDir(envName, preferredDir, fallbackName string) string {
+	if configured := strings.TrimSpace(os.Getenv(envName)); configured != "" {
+		return configured
+	}
+
+	if err := os.MkdirAll(preferredDir, 0755); err == nil {
+		return preferredDir
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		wd = os.TempDir()
+	}
+	localFallback := filepath.Join(wd, fallbackName)
+	if err := os.MkdirAll(localFallback, 0755); err == nil {
+		fmt.Printf("No write access to %s, using %s\n", preferredDir, localFallback)
+		return localFallback
+	}
+
+	tmpFallback := filepath.Join(os.TempDir(), fallbackName)
+	fmt.Printf("No write access to %s, using %s\n", preferredDir, tmpFallback)
+	return tmpFallback
+}
+
+func configureRuntimePaths() {
+	logDir = resolveStorageDir("AIRSEND_LOG_DIR", DEFAULT_LOG_DIR, "airsend-logs")
+	filesDir = resolveStorageDir("AIRSEND_FILES_DIR", DEFAULT_FILES_DIR, "airsend-files")
+}
+
+func resolveReceiveHost(r *http.Request) string {
+	host := strings.TrimSpace(webQUICHost)
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = r.Host
+		if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+			host = parsedHost
+		}
+		if host == "" {
+			host = DEFAULT_SERVER_HOST
+		}
+	}
+	return host
+}
+
+func buildReceiveCommand(r *http.Request, code string) (string, int, string) {
+	host := resolveReceiveHost(r)
+	port := webQUICPort
+	if port <= 0 {
+		port = DEFAULT_SERVER_PORT
+	}
+	cmd := fmt.Sprintf("airsend -r %s %s %d", code, host, port)
+	return host, port, cmd
+}
+
 func isValidIP(address string) bool {
 	parts := strings.Split(address, ".")
 	if len(parts) != 4 {
@@ -207,6 +266,146 @@ func logData(logFilename, direction string, data []byte) {
 	header := fmt.Sprintf("\n[%s %s]:\n", time.Now().Format("2006-01-02 15:04:05"), direction)
 	f.WriteString(header)
 	f.Write(data)
+}
+
+func trimForLog(value string, max int) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= max {
+		return value
+	}
+	return value[:max] + "..."
+}
+
+func normalizeClientIP(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+
+	value = strings.Trim(value, "\"'")
+	lower := strings.ToLower(value)
+	if strings.HasPrefix(lower, "for=") {
+		value = strings.TrimSpace(value[4:])
+		value = strings.Trim(value, "\"'")
+	}
+	if strings.EqualFold(value, "unknown") {
+		return ""
+	}
+
+	// IPv6 in RFC 7239 format: [2001:db8::1]:1234 or [2001:db8::1]
+	if strings.HasPrefix(value, "[") {
+		if end := strings.Index(value, "]"); end > 1 {
+			candidate := value[1:end]
+			if ip := net.ParseIP(candidate); ip != nil {
+				return ip.String()
+			}
+			return candidate
+		}
+	}
+
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		if ip := net.ParseIP(host); ip != nil {
+			return ip.String()
+		}
+		return host
+	}
+
+	if ip := net.ParseIP(value); ip != nil {
+		return ip.String()
+	}
+	return value
+}
+
+func firstValidClientIP(values ...string) string {
+	for _, raw := range values {
+		if raw == "" {
+			continue
+		}
+		for _, part := range strings.Split(raw, ",") {
+			if ip := normalizeClientIP(part); ip != "" {
+				return ip
+			}
+		}
+	}
+	return ""
+}
+
+func clientAddressFromRequest(r *http.Request) string {
+	if ip := firstValidClientIP(
+		r.Header.Get("CF-Connecting-IP"),
+		r.Header.Get("True-Client-IP"),
+		r.Header.Get("X-Real-IP"),
+		r.Header.Get("X-Forwarded-For"),
+	); ip != "" {
+		return ip
+	}
+
+	// RFC 7239 Forwarded: for=1.2.3.4;proto=https
+	forwarded := strings.TrimSpace(r.Header.Get("Forwarded"))
+	if forwarded != "" {
+		for _, segment := range strings.Split(forwarded, ";") {
+			keyVal := strings.SplitN(strings.TrimSpace(segment), "=", 2)
+			if len(keyVal) == 2 && strings.EqualFold(strings.TrimSpace(keyVal[0]), "for") {
+				if ip := firstValidClientIP(keyVal[1]); ip != "" {
+					return ip
+				}
+			}
+		}
+	}
+
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	if ip := normalizeClientIP(r.RemoteAddr); ip != "" {
+		return ip
+	}
+	return "unknown"
+}
+
+func httpRemoteDetails(r *http.Request) (string, string) {
+	raw := strings.TrimSpace(r.RemoteAddr)
+	ip := clientAddressFromRequest(r)
+	if ip == "" || ip == "unknown" {
+		if host, _, err := net.SplitHostPort(raw); err == nil && host != "" {
+			ip = host
+		} else if raw != "" {
+			ip = raw
+		} else {
+			ip = "unknown"
+		}
+	}
+	if raw == "" {
+		raw = "unknown"
+	}
+	return ip, raw
+}
+
+func logConnectionEvent(transport, remoteAddr, detail string) {
+	line := fmt.Sprintf("[%s] transport=%s remote=%s detail=%s\n",
+		time.Now().Format("2006-01-02 15:04:05"),
+		trimForLog(transport, 32),
+		trimForLog(remoteAddr, 128),
+		trimForLog(detail, 512),
+	)
+	fmt.Printf("[CONN] %s", line)
+
+	connectionLogMu.Lock()
+	defer connectionLogMu.Unlock()
+
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		fmt.Printf("Error creating log dir %s: %v\n", logDir, err)
+		return
+	}
+
+	logPath := filepath.Join(logDir, CONNECTIONS_LOG)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error opening connection log %s: %v\n", logPath, err)
+		return
+	}
+	defer f.Close()
+
+	_, _ = f.WriteString(line)
 }
 
 func relay(src, dst net.Conn, logFilename, direction string, wg *sync.WaitGroup) {
@@ -340,7 +539,7 @@ func handleFileSend(commandLine string, reader *bufio.Reader, conn net.Conn) {
 
 	// Crea el archivo de salida
 	serverFilename := fmt.Sprintf("%s_%s", code, filename)
-	fullPath := filepath.Join(FILES_DIR, serverFilename)
+	fullPath := filepath.Join(filesDir, serverFilename)
 	file, err := os.Create(fullPath)
 	if err != nil {
 		fmt.Printf("Error creating file: %v\n", err)
@@ -501,43 +700,52 @@ func handleChatOrRelay(conn net.Conn, firstLine string) chan struct{} {
 // handleClient dispatches incoming connections: file transfers or chat relays.
 // For chat relays, connection lifecycle is managed by relay functions.
 func handleClient(conn net.Conn) {
+	remote := conn.RemoteAddr().String()
+
 	// Read the command line (first message)
 	reader := bufio.NewReader(conn)
 	firstLine, err := readLine(reader)
 	if err != nil || firstLine == "" {
+		logConnectionEvent("quic", remote, "empty_or_invalid_header")
 		conn.Close()
 		return
 	}
+
+	logConnectionEvent("quic", remote, fmt.Sprintf("first_line=%s", firstLine))
 	// File transfer commands
 	if strings.HasPrefix(firstLine, "FILE") {
 		parts := strings.Split(firstLine, " ")
 		if len(parts) >= 2 {
 			mode := parts[1]
 			if mode == "SEND" {
+				logConnectionEvent("quic", remote, "command=FILE SEND")
 				handleFileSend("FILE SEND", reader, conn)
 				return
 			} else if mode == "RECV" {
+				logConnectionEvent("quic", remote, "command=FILE RECV")
 				handleFileRecv(reader, conn)
 				return
 			}
 		}
 		// Unrecognized FILE command
+		logConnectionEvent("quic", remote, fmt.Sprintf("command=FILE unknown line=%s", firstLine))
 		conn.Close()
 		return
 	}
 	// Chat or relay: do not close here; relay() will clean up
+	logConnectionEvent("quic", remote, fmt.Sprintf("command=CHAT code=%s", firstLine))
 	handleChatOrRelay(conn, firstLine)
 }
 
 func runServer(host string, port int) {
 	// Crear directorios necesarios con mejor manejo de errores
-	if err := os.MkdirAll(LOG_DIR, 0755); err != nil {
-		fmt.Printf("Error creando directorio de logs %s: %v\n", LOG_DIR, err)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		fmt.Printf("Error creando directorio de logs %s: %v\n", logDir, err)
 		os.Exit(1)
 	}
 
-	if err := os.MkdirAll(FILES_DIR, 0755); err != nil {
-		fmt.Printf("Error creando directorio de archivos %s: %v\n", FILES_DIR, err)
+	if err := os.MkdirAll(filesDir, 0755); err != nil {
+		fmt.Printf("Error creando directorio de archivos %s: %v\n", filesDir, err)
 		os.Exit(1)
 	}
 
@@ -558,7 +766,7 @@ func runServer(host string, port int) {
 	// Suppress go runtime warnings (noop, placeholder)
 	// Mostrar información de inicio
 	fmt.Printf("Servidor escuchando en %s\n", addr)
-	fmt.Printf("Directorio de archivos: %s\n", FILES_DIR)
+	fmt.Printf("Directorio de archivos: %s\n", filesDir)
 
 	// Bucle principal del servidor
 	for {
@@ -576,17 +784,76 @@ func runServer(host string, port int) {
 			}
 			conn := newQUICStreamConn(session, stream)
 			fmt.Printf("Nueva conexión desde %s\n", conn.RemoteAddr().String())
+			logConnectionEvent("quic", conn.RemoteAddr().String(), "stream_accepted")
 			handleClient(conn)
 		}(sess)
 	}
+}
+
+func sanitizeFilename(filename, fallback string) string {
+	name := strings.TrimSpace(filename)
+	if name == "" {
+		name = fallback
+	}
+	name = filepath.Base(name)
+	name = strings.ReplaceAll(name, "\x00", "")
+	name = strings.ReplaceAll(name, "/", "_")
+	name = strings.ReplaceAll(name, "\\", "_")
+	if name == "" || name == "." || name == ".." {
+		name = fallback
+	}
+	return name
+}
+
+func normalizeTextToLF(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	return strings.ReplaceAll(text, "\r", "\n")
+}
+
+func savePendingFile(code, filename string, src io.Reader) (string, FileInfo, error) {
+	normalizedCode := strings.TrimSpace(code)
+	if normalizedCode == "" {
+		normalizedCode = generateCode(6)
+	}
+
+	safeFilename := sanitizeFilename(filename, "script.txt")
+	serverFilename := fmt.Sprintf("%s_%s", normalizedCode, safeFilename)
+	fullPath := filepath.Join(filesDir, serverFilename)
+
+	dst, err := os.Create(fullPath)
+	if err != nil {
+		return "", FileInfo{}, err
+	}
+	defer dst.Close()
+
+	n, err := io.Copy(dst, src)
+	if err != nil {
+		return "", FileInfo{}, err
+	}
+
+	info := FileInfo{
+		filename: safeFilename,
+		filesize: n,
+		fullPath: fullPath,
+	}
+
+	pendingFilesLock.Lock()
+	pendingFiles[normalizedCode] = info
+	pendingFilesLock.Unlock()
+
+	return normalizedCode, info, nil
 }
 
 // startWebServer levanta una interfaz HTTP simple para subir/descargar archivos.
 // Reutiliza el mismo mapa pendingFiles para interoperar con el flujo CLI.
 func startWebServer(addr string) {
 	// Asegura que los directorios existen, igual que el servidor QUIC.
-	if err := os.MkdirAll(FILES_DIR, 0755); err != nil {
-		fmt.Printf("Error creando directorio de archivos %s: %v\n", FILES_DIR, err)
+	if err := os.MkdirAll(filesDir, 0755); err != nil {
+		fmt.Printf("Error creando directorio de archivos %s: %v\n", filesDir, err)
+		return
+	}
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		fmt.Printf("Error creando directorio de logs %s: %v\n", logDir, err)
 		return
 	}
 
@@ -594,12 +861,16 @@ func startWebServer(addr string) {
 
 	// Página principal minimalista.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		clientIP, rawRemote := httpRemoteDetails(r)
+		logConnectionEvent("http", clientIP, fmt.Sprintf("%s %s raw_remote=%s", r.Method, r.URL.Path, rawRemote))
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		io.WriteString(w, indexHTML)
 	})
 
 	// Endpoint de subida: acepta multipart/form-data con campo "file" y opcional "code".
 	mux.HandleFunc("/api/upload", func(w http.ResponseWriter, r *http.Request) {
+		clientIP, rawRemote := httpRemoteDetails(r)
+		logConnectionEvent("http", clientIP, fmt.Sprintf("%s %s raw_remote=%s", r.Method, r.URL.Path, rawRemote))
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -616,41 +887,90 @@ func startWebServer(addr string) {
 		}
 		defer file.Close()
 
-		code := r.FormValue("code")
-		if code == "" {
-			code = generateCode(6)
-		}
-
-		serverFilename := fmt.Sprintf("%s_%s", code, header.Filename)
-		fullPath := filepath.Join(FILES_DIR, serverFilename)
-		dst, err := os.Create(fullPath)
+		code, info, err := savePendingFile(r.FormValue("code"), header.Filename, file)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		defer dst.Close()
-
-		n, err := io.Copy(dst, file)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Guarda en el mapa compartido.
-		pendingFilesLock.Lock()
-		pendingFiles[code] = FileInfo{filename: header.Filename, filesize: n, fullPath: fullPath}
-		pendingFilesLock.Unlock()
+		logConnectionEvent("http", clientIP, fmt.Sprintf("upload_saved code=%s file=%s bytes=%d raw_remote=%s", code, info.filename, info.filesize, rawRemote))
+		recvHost, recvPort, recvCmd := buildReceiveCommand(r, code)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"code":     code,
-			"filename": header.Filename,
-			"bytes":    n,
+			"code":      code,
+			"filename":  info.filename,
+			"bytes":     info.filesize,
+			"recv_host": recvHost,
+			"recv_port": recvPort,
+			"recv_cmd":  recvCmd,
+		})
+	})
+
+	// Endpoint para pegar texto/script desde web y mandarlo como archivo AirSend.
+	mux.HandleFunc("/api/paste", func(w http.ResponseWriter, r *http.Request) {
+		clientIP, rawRemote := httpRemoteDetails(r)
+		logConnectionEvent("http", clientIP, fmt.Sprintf("%s %s raw_remote=%s", r.Method, r.URL.Path, rawRemote))
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var payload struct {
+			Text     string `json:"text"`
+			Filename string `json:"filename"`
+			Code     string `json:"code"`
+		}
+
+		if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				http.Error(w, "invalid json payload", http.StatusBadRequest)
+				return
+			}
+		} else {
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, "invalid form payload", http.StatusBadRequest)
+				return
+			}
+			payload.Text = r.FormValue("text")
+			payload.Filename = r.FormValue("filename")
+			payload.Code = r.FormValue("code")
+		}
+
+		text := normalizeTextToLF(payload.Text)
+		if strings.TrimSpace(text) == "" {
+			http.Error(w, "text required", http.StatusBadRequest)
+			return
+		}
+
+		filename := payload.Filename
+		if strings.TrimSpace(filename) == "" {
+			filename = "script.txt"
+		}
+
+		code, info, err := savePendingFile(payload.Code, filename, strings.NewReader(text))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		logConnectionEvent("http", clientIP, fmt.Sprintf("paste_saved code=%s file=%s bytes=%d raw_remote=%s", code, info.filename, info.filesize, rawRemote))
+		recvHost, recvPort, recvCmd := buildReceiveCommand(r, code)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"code":         code,
+			"filename":     info.filename,
+			"bytes":        info.filesize,
+			"line_endings": "LF",
+			"recv_host":    recvHost,
+			"recv_port":    recvPort,
+			"recv_cmd":     recvCmd,
 		})
 	})
 
 	// Endpoint de descarga por código.
 	mux.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
+		clientIP, rawRemote := httpRemoteDetails(r)
+		logConnectionEvent("http", clientIP, fmt.Sprintf("%s %s code=%s raw_remote=%s", r.Method, r.URL.Path, r.URL.Query().Get("code"), rawRemote))
 		code := r.URL.Query().Get("code")
 		if code == "" {
 			http.Error(w, "code requerido", http.StatusBadRequest)
@@ -665,9 +985,11 @@ func startWebServer(addr string) {
 		pendingFilesLock.Unlock()
 
 		if !ok {
+			logConnectionEvent("http", clientIP, fmt.Sprintf("download_miss code=%s raw_remote=%s", code, rawRemote))
 			http.Error(w, "code not found", http.StatusNotFound)
 			return
 		}
+		logConnectionEvent("http", clientIP, fmt.Sprintf("download_hit code=%s file=%s bytes=%d raw_remote=%s", code, fileInfo.filename, fileInfo.filesize, rawRemote))
 
 		// Force download instead of inline display
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileInfo.filename))
@@ -677,12 +999,15 @@ func startWebServer(addr string) {
 
 	// WebSocket chat, compatible con -m/-mr (usa el mismo handleChatOrRelay).
 	mux.Handle("/ws", websocket.Handler(func(ws *websocket.Conn) {
+		logConnectionEvent("ws", ws.Request().RemoteAddr, fmt.Sprintf("connect path=%s", ws.Request().URL.Path))
 		code := ws.Request().URL.Query().Get("code")
 		if code == "" {
+			logConnectionEvent("ws", ws.Request().RemoteAddr, "connect_rejected missing_code")
 			ws.Write([]byte("code query param required\n"))
 			ws.Close()
 			return
 		}
+		logConnectionEvent("ws", ws.Request().RemoteAddr, fmt.Sprintf("connect_ok code=%s", code))
 		ws.PayloadType = websocket.BinaryFrame
 		done := handleChatOrRelay(ws, code)
 		if done == nil {
@@ -699,7 +1024,7 @@ func startWebServer(addr string) {
 	}()
 }
 
-const indexHTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Airsend Web</title>
+const indexHTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Airsend Web</title>
 <style>
 :root{
   --bg:#282a36;
@@ -709,13 +1034,13 @@ const indexHTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><t
   --muted:#8a8fa3;
   --accent:#bd93f9;
   --accent-2:#50fa7b;
-  --danger:#ff5555;
   --border:#44475a;
 }
 *{box-sizing:border-box;}
 body{
-  margin:32px;
-  max-width:820px;
+  margin:24px auto;
+  padding:0 14px;
+  max-width:860px;
   font-family:Inter,system-ui,-apple-system,sans-serif;
   background:radial-gradient(circle at 15% 20%, #31354a 0, rgba(40,42,54,0) 30%),
              radial-gradient(circle at 80% 0%, #2d3042 0, rgba(40,42,54,0) 28%),
@@ -725,6 +1050,7 @@ body{
 h1,h3{color:var(--text);margin-bottom:12px;}
 label{display:block;margin:12px 0 4px;color:var(--muted);font-size:13px;letter-spacing:0.02em;}
 input,button,textarea{
+  width:100%;
   padding:10px 12px;
   font-size:14px;
   border-radius:10px;
@@ -735,6 +1061,7 @@ input,button,textarea{
 }
 input:focus,textarea:focus{border-color:var(--accent);}
 button{
+  width:auto;
   cursor:pointer;
   background:linear-gradient(135deg,var(--accent),#9a7bff);
   color:#12121a;
@@ -753,37 +1080,146 @@ button:active{transform:translateY(0);}
   margin-bottom:20px;
   box-shadow:0 10px 30px rgba(0,0,0,0.25);
 }
-#status{margin:8px 0;color:var(--accent-2);}
+.file-stack{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+}
+.file-block{
+  background:rgba(0,0,0,0.14);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:12px;
+}
+.file-block h4{
+  margin:2px 0 10px;
+  font-size:14px;
+  color:var(--text);
+}
+.btn-upload{
+  background:linear-gradient(135deg,#50fa7b,#3ddf68);
+  color:#0a1a10;
+}
+.btn-download{
+  background:linear-gradient(135deg,#8be9fd,#6dd6ff);
+  color:#09121a;
+}
+#status,#pasteStatus{margin:10px 0;color:var(--accent-2);}
+.form-actions{
+  margin-top:10px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;
+}
+#uploadCode{margin-top:0;}
+#pasteCodeOut{margin-top:0;}
+.upload-meta{
+  line-height:1.15;
+}
+.upload-meta-label{
+  font-size:10px;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  color:#8bf9a9;
+}
+.upload-meta-file{
+  margin-top:2px;
+  font-size:11px;
+  color:#8bf9a9;
+}
+.result-code{
+  display:inline;
+  padding:0;
+  border-radius:0;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:21px;
+  font-weight:800;
+  letter-spacing:0.08em;
+  color:#ffffff;
+  background:none;
+}
+.code-label{
+  font-size:13px;
+  color:#d6d9e6;
+  margin-right:6px;
+  vertical-align:baseline;
+}
+#pasteText{
+  min-height:180px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  line-height:1.45;
+}
 #chatLog{
   background:var(--panel);
   border:1px solid var(--border);
   color:var(--text);
   min-height:240px;
   max-height:360px;
-  width:100%;
   overflow:auto;
   white-space:pre-wrap;
 }
+.chat-row{
+  margin-top:10px;
+  display:flex;
+  gap:8px;
+}
+#chatInput{
+  border-radius:10px 0 0 10px;
+  width:78%;
+}
+#sendBtn{
+  border-radius:0 10px 10px 0;
+  width:22%;
+}
 a{color:var(--accent);}
+@media (max-width:700px){
+  body{margin:16px auto;padding:0 10px;}
+  .file-stack{grid-template-columns:1fr;}
+  .chat-row{flex-direction:column;}
+  #chatInput,#sendBtn{width:100%;border-radius:10px;}
+}
 </style>
 </head><body>
 <h1>Airsend Web</h1>
 <div class="card">
-  <h3>Upload</h3>
-  <form id="uploadForm">
-    <label>File</label><input name="file" type="file" required>
-    <label>Code (optional to reuse)</label><input name="code" placeholder="e.g. rio42">
-    <button type="submit">Upload</button>
-  </form>
-  <p id="status"></p>
+  <h3>Files</h3>
+  <div class="file-stack">
+    <div class="file-block">
+      <h4>Upload File</h4>
+      <form id="uploadForm">
+        <label>File</label><input name="file" type="file" required>
+        <label>Code (optional to reuse)</label><input name="code" placeholder="e.g. rio42">
+        <div class="form-actions">
+          <button class="btn-upload" type="submit">Upload</button>
+          <div id="uploadCode"></div>
+        </div>
+      </form>
+      <p id="status"></p>
+    </div>
+    <div class="file-block">
+      <h4>Download File</h4>
+      <form id="downloadForm">
+        <label>Code</label><input id="downloadCode" name="code" required>
+        <button class="btn-download" type="submit">Download</button>
+      </form>
+    </div>
+  </div>
 </div>
 
 <div class="card">
-  <h3>Download</h3>
-  <form id="downloadForm">
-    <label>Code</label><input name="code" required>
-    <button type="submit">Download</button>
+  <h3>Paste Script / Text</h3>
+  <form id="pasteForm">
+    <label>Filename (optional)</label><input id="pasteFilename" name="filename" placeholder="script.sh">
+    <label>Code (optional to reuse)</label><input id="pasteCode" name="code" placeholder="e.g. wave21">
+    <label>Text to send</label><textarea id="pasteText" name="text" required></textarea>
+    <div class="form-actions">
+      <button type="submit">Send text and generate code</button>
+      <div id="pasteCodeOut"></div>
+    </div>
   </form>
+  <p id="pasteStatus"></p>
+  <a id="pasteDownloadLink" href="#" style="display:none;">Download this file now</a>
 </div>
 
 <div class="card">
@@ -793,27 +1229,95 @@ a{color:var(--accent);}
     <button type="button" id="connectBtn">Connect</button>
   </form>
   <div style="margin:12px 0;">
-    <textarea id="chatLog" rows="14" style="width:100%;border-radius:12px;" readonly></textarea><br>
-    <textarea id="chatInput" rows="3" placeholder="Type message" style="width:78%;border-radius:10px 0 0 10px;"></textarea>
-    <button id="sendBtn" style="border-radius:0 10px 10px 0;">Send</button>
+    <textarea id="chatLog" rows="14" readonly></textarea>
+    <div class="chat-row">
+      <textarea id="chatInput" rows="3" placeholder="Type message"></textarea>
+      <button id="sendBtn" type="button">Send</button>
+    </div>
   </div>
 </div>
 <script>
-const st = document.getElementById('status');
+const statusEl = document.getElementById('status');
+const uploadCodeEl = document.getElementById('uploadCode');
+const pasteCodeOutEl = document.getElementById('pasteCodeOut');
+const pasteStatusEl = document.getElementById('pasteStatus');
+const pasteDownloadLink = document.getElementById('pasteDownloadLink');
+const downloadCodeInput = document.getElementById('downloadCode');
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+
+const parseApiResponse = async (response) => {
+  const raw = await response.text();
+  try {
+    return { ok: response.ok, data: JSON.parse(raw), raw };
+  } catch (_) {
+    return { ok: response.ok, data: null, raw };
+  }
+};
+
 document.getElementById('uploadForm').onsubmit = async (e) => {
   e.preventDefault();
   const data = new FormData(e.target);
-  st.textContent = 'Uploading...';
+  statusEl.textContent = 'Uploading...';
+  uploadCodeEl.innerHTML = '';
   try {
-    const r = await fetch('/api/upload', {method:'POST', body:data});
-    const t = await r.text();
-    st.textContent = t;
-  } catch(err) { st.textContent = 'Error: '+err; }
+    const response = await fetch('/api/upload', { method:'POST', body:data });
+    const parsed = await parseApiResponse(response);
+    if (!parsed.ok || !parsed.data) {
+      statusEl.textContent = parsed.raw || 'Upload failed';
+      uploadCodeEl.innerHTML = '';
+      return;
+    }
+    downloadCodeInput.value = parsed.data.code;
+    const safeFile = escapeHtml(parsed.data.filename || '');
+    const safeCode = escapeHtml(parsed.data.code || '');
+    statusEl.innerHTML = '<div class="upload-meta"><div class="upload-meta-label">UPLOADED</div><div class="upload-meta-file">' + safeFile + '</div></div>';
+    uploadCodeEl.innerHTML = '<span class="code-label">Code:</span><span class="result-code">' + safeCode + '</span>';
+  } catch(err) {
+    statusEl.textContent = 'Error: ' + err;
+    uploadCodeEl.innerHTML = '';
+  }
 };
+
+document.getElementById('pasteForm').onsubmit = async (e) => {
+  e.preventDefault();
+  pasteStatusEl.textContent = 'Sending text...';
+  pasteDownloadLink.style.display = 'none';
+  pasteCodeOutEl.innerHTML = '';
+
+  const payload = {
+    filename: document.getElementById('pasteFilename').value,
+    code: document.getElementById('pasteCode').value,
+    text: document.getElementById('pasteText').value,
+  };
+
+  try {
+    const response = await fetch('/api/paste', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const parsed = await parseApiResponse(response);
+    if (!parsed.ok || !parsed.data) {
+      pasteStatusEl.textContent = parsed.raw || 'Send failed';
+      return;
+    }
+
+    downloadCodeInput.value = parsed.data.code;
+    pasteStatusEl.textContent = '';
+    const safeCode = escapeHtml(parsed.data.code || '');
+    pasteCodeOutEl.innerHTML = '<span class="code-label">Code:</span><span class="result-code">' + safeCode + '</span>';
+    pasteDownloadLink.href = '/api/download?code=' + encodeURIComponent(parsed.data.code);
+    pasteDownloadLink.style.display = 'inline';
+  } catch(err) {
+    pasteStatusEl.textContent = 'Error: ' + err;
+    pasteCodeOutEl.innerHTML = '';
+  }
+};
+
 document.getElementById('downloadForm').onsubmit = (e) => {
   e.preventDefault();
   const code = new FormData(e.target).get('code');
-  window.location = '/api/download?code='+encodeURIComponent(code);
+  window.location = '/api/download?code=' + encodeURIComponent(code);
 };
 
 let ws;
@@ -823,6 +1327,7 @@ const appendLog = (prefix, text) => {
   log.value += prefix + text + '\n';
   log.scrollTop = log.scrollHeight;
 };
+
 document.getElementById('connectBtn').onclick = () => {
   const code = document.getElementById('chatCode').value.trim();
   if (!code) return alert('Code required');
@@ -838,6 +1343,7 @@ document.getElementById('connectBtn').onclick = () => {
   ws.onclose = () => log.value += 'Disconnected\n';
   ws.onerror = (err) => log.value += 'Error: ' + err + '\n';
 };
+
 const sendMsg = () => {
   if (!ws || ws.readyState !== WebSocket.OPEN) return alert('Not connected');
   const msg = input.value;
@@ -846,6 +1352,7 @@ const sendMsg = () => {
   appendLog('You: ', msg.trim());
   input.value = '';
 };
+
 document.getElementById('sendBtn').onclick = sendMsg;
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -1318,6 +1825,7 @@ func main() {
 	mode := os.Args[1]
 	switch mode {
 	case "-s":
+		configureRuntimePaths()
 		host := DEFAULT_SERVER_HOST
 		port := DEFAULT_SERVER_PORT
 		if len(os.Args) >= 3 {
@@ -1330,6 +1838,7 @@ func main() {
 		}
 		runServer(host, port)
 	case "-sw":
+		configureRuntimePaths()
 		webHost := "0.0.0.0"
 		webPort := 3888
 		quicHost := webHost             // por defecto escucha en la misma IP que el web
@@ -1353,6 +1862,8 @@ func main() {
 			}
 		}
 
+		webQUICHost = quicHost
+		webQUICPort = quicPort
 		go runServer(quicHost, quicPort)
 		startWebServer(fmt.Sprintf("%s:%d", webHost, webPort))
 		select {} // block forever
