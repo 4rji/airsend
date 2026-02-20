@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AirSend | Project Overview</title>
+  <style>
+    :root{
+      --bg:#030303;
+      --bg-soft:#0a0a0a;
+      --panel:#111;
+      --text:#f3f4f6;
+      --muted:#9ca3af;
+      --line:#262626;
+      --accent:#06b6d4;
+      --accent-2:#22c55e;
+    }
+
+    *{box-sizing:border-box}
+
+    body{
+      margin:0;
+      color:var(--text);
+      background:
+        radial-gradient(1200px 600px at 15% -10%, rgba(6,182,212,.2), transparent 55%),
+        radial-gradient(1000px 500px at 95% 0%, rgba(34,197,94,.15), transparent 55%),
+        var(--bg);
+      font-family:"Space Grotesk","Avenir Next","Segoe UI",sans-serif;
+      line-height:1.55;
+    }
+
+    .container{
+      width:min(1080px,92vw);
+      margin:0 auto;
+      padding:48px 0 72px;
+    }
+
+    .hero{
+      border:1px solid var(--line);
+      background:linear-gradient(180deg, rgba(255,255,255,.02), transparent 65%), var(--bg-soft);
+      border-radius:22px;
+      padding:48px 34px;
+      box-shadow:0 20px 50px rgba(0,0,0,.45);
+    }
+
+    .badge{
+      display:inline-block;
+      font-family:"IBM Plex Mono","Fira Code",monospace;
+      font-size:.78rem;
+      color:var(--accent);
+      border:1px solid rgba(6,182,212,.35);
+      padding:6px 10px;
+      border-radius:999px;
+      letter-spacing:.04em;
+    }
+
+    h1{
+      margin:16px 0 10px;
+      font-size:clamp(2rem,5vw,3.2rem);
+      letter-spacing:-.02em;
+      line-height:1.05;
+    }
+
+    .lead{
+      margin:0;
+      color:var(--muted);
+      max-width:70ch;
+      font-size:1.05rem;
+    }
+
+    .grid{
+      margin-top:28px;
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:14px;
+    }
+
+    .card{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:18px;
+    }
+
+    h2{
+      margin:28px 0 14px;
+      font-size:1.4rem;
+      letter-spacing:-.01em;
+    }
+
+    h3{
+      margin:0 0 8px;
+      font-size:1rem;
+    }
+
+    p{
+      margin:0;
+      color:var(--muted);
+      font-size:.98rem;
+    }
+
+    .steps{
+      margin-top:12px;
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:14px;
+    }
+
+    .step{
+      padding:16px;
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:#0d0d0d;
+    }
+
+    .step-id{
+      font-family:"IBM Plex Mono","Fira Code",monospace;
+      color:var(--accent-2);
+      font-size:.8rem;
+      margin-bottom:5px;
+      display:block;
+    }
+
+    ul{
+      margin:0;
+      padding-left:20px;
+      color:var(--muted);
+    }
+
+    li + li{
+      margin-top:7px;
+    }
+
+    .code{
+      margin-top:14px;
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:#090909;
+      padding:14px;
+      font-family:"IBM Plex Mono","Fira Code",monospace;
+      font-size:.88rem;
+      overflow:auto;
+      color:#d1fae5;
+    }
+
+    .footer{
+      margin-top:24px;
+      color:#7d8590;
+      font-size:.87rem;
+    }
+
+    @media (max-width:900px){
+      .grid,.steps{
+        grid-template-columns:1fr;
+      }
+      .hero{
+        padding:34px 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="hero">
+      <span class="badge">AirSend • Project Overview</span>
+      <h1>Fast file transfer and chat using room codes</h1>
+      <p class="lead">
+        AirSend is a lightweight Go project that lets users share files and chat through a web interface or CLI.
+        It combines a simple browser UI with a QUIC-based transport layer, so teams can send data quickly and keep communication in one place.
+      </p>
+    </section>
+
+    <section>
+      <h2>What the project is about</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>Flexible by design</h3>
+          <p>AirSend was built to avoid rigid defaults and allows custom hosts, ports, and deployment styles.</p>
+        </article>
+        <article class="card">
+          <h3>Dual experience</h3>
+          <p>Users can work from a modern web page or from terminal commands, depending on their workflow.</p>
+        </article>
+        <article class="card">
+          <h3>Room-based sharing</h3>
+          <p>A code links people to the same transfer or chat room, making collaboration direct and simple.</p>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>How it works</h2>
+      <div class="steps">
+        <article class="step">
+          <span class="step-id">Step 01</span>
+          <p>Start AirSend with web + QUIC mode. The web UI runs on a TCP port and data transport runs on a UDP port.</p>
+        </article>
+        <article class="step">
+          <span class="step-id">Step 02</span>
+          <p>Upload a file in the web UI or send from CLI. A room code is generated (or provided) for access.</p>
+        </article>
+        <article class="step">
+          <span class="step-id">Step 03</span>
+          <p>Receivers enter the same code to download files or join the shared chat room from web or terminal.</p>
+        </article>
+        <article class="step">
+          <span class="step-id">Step 04</span>
+          <p>Messages are broadcast to all users in that room, and connection events can be logged for visibility.</p>
+        </article>
+      </div>
+      <pre class="code">sudo go run . -sw 0.0.0.0 3888 0.0.0.0 443
+airsend -f file.pdf
+airsend -r room42
+airsend -m room42</pre>
+    </section>
+
+    <section>
+      <h2>Main functionalities</h2>
+      <div class="card">
+        <ul>
+          <li>Web upload and forced-download flow to avoid inline preview issues.</li>
+          <li>Multi-user chat rooms over WebSocket with Enter-to-send support.</li>
+          <li>CLI and web interoperability using the same room code model.</li>
+          <li>QUIC keepalive and idle timeout handling for connection stability.</li>
+          <li>Configurable host/port settings for local, remote, or custom deployments.</li>
+          <li>Connection logging to track web and QUIC activity.</li>
+        </ul>
+      </div>
+    </section>
+
+    <p class="footer">Built for practical sharing: quick setup, direct transfer, and real-time communication.</p>
+  </main>
+</body>
+</html>
