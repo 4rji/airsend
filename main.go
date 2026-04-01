@@ -1123,7 +1123,7 @@ func startWebServer(addr string) {
 		pendingFilesLock.Unlock()
 
 		if !ok {
-			if _, missAllowed := rateLimiter.allow("download_miss", clientIP, downloadMissRateRule); !missAllowed {
+			if missAllowed, _ := rateLimiter.allow("download_miss", clientIP, downloadMissRateRule); !missAllowed {
 				logConnectionEvent("http", clientIP, fmt.Sprintf("download_miss_blocked code=%s raw_remote=%s", code, rawRemote))
 			}
 			logConnectionEvent("http", clientIP, fmt.Sprintf("download_miss code=%s raw_remote=%s", code, rawRemote))
