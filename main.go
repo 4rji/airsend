@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -49,6 +50,23 @@ type FileInfo struct {
 	fullPath string
 }
 
+type rateLimitRule struct {
+	max      int
+	window   time.Duration
+	blockFor time.Duration
+}
+
+type rateLimitState struct {
+	windowStart time.Time
+	count       int
+	blockedUntil time.Time
+}
+
+type memoryRateLimiter struct {
+	mu      sync.Mutex
+	entries map[string]*rateLimitState
+}
+
 var (
 	pending          = make(map[string]PendingChat)
 	pendingLock      sync.Mutex
@@ -61,6 +79,16 @@ var (
 	filesDir         = DEFAULT_FILES_DIR
 	webQUICHost      = DEFAULT_SERVER_HOST
 	webQUICPort      = DEFAULT_SERVER_PORT
+	rateLimiter      = newMemoryRateLimiter()
+	cleanupLimiterOnce uint32
+)
+
+var (
+	uploadRateRule       = rateLimitRule{max: 20, window: time.Minute, blockFor: 2 * time.Minute}
+	pasteRateRule        = rateLimitRule{max: 20, window: time.Minute, blockFor: 2 * time.Minute}
+	downloadRateRule     = rateLimitRule{max: 12, window: time.Minute, blockFor: 3 * time.Minute}
+	downloadMissRateRule = rateLimitRule{max: 8, window: 2 * time.Minute, blockFor: 5 * time.Minute}
+	wsRateRule           = rateLimitRule{max: 8, window: time.Minute, blockFor: 3 * time.Minute}
 )
 
 // ChatRoom permite más de dos usuarios por código.
@@ -215,6 +243,103 @@ func resolveStorageDir(envName, preferredDir, fallbackName string) string {
 func configureRuntimePaths() {
 	logDir = resolveStorageDir("AIRSEND_LOG_DIR", DEFAULT_LOG_DIR, "airsend-logs")
 	filesDir = resolveStorageDir("AIRSEND_FILES_DIR", DEFAULT_FILES_DIR, "airsend-files")
+}
+
+func newMemoryRateLimiter() *memoryRateLimiter {
+	return &memoryRateLimiter{
+		entries: make(map[string]*rateLimitState),
+	}
+}
+
+func (l *memoryRateLimiter) allow(scope, ip string, rule rateLimitRule) (bool, time.Duration) {
+	now := time.Now()
+	key := scope + "|" + ip
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	entry, ok := l.entries[key]
+	if !ok {
+		l.entries[key] = &rateLimitState{
+			windowStart: now,
+			count:       1,
+		}
+		return true, 0
+	}
+
+	if entry.blockedUntil.After(now) {
+		return false, time.Until(entry.blockedUntil)
+	}
+
+	if now.Sub(entry.windowStart) >= rule.window {
+		entry.windowStart = now
+		entry.count = 1
+		entry.blockedUntil = time.Time{}
+		return true, 0
+	}
+
+	if entry.count >= rule.max {
+		retryAfter := time.Until(entry.windowStart.Add(rule.window))
+		if rule.blockFor > 0 {
+			entry.blockedUntil = now.Add(rule.blockFor)
+			retryAfter = time.Until(entry.blockedUntil)
+		}
+		return false, retryAfter
+	}
+
+	entry.count++
+	return true, 0
+}
+
+func (l *memoryRateLimiter) cleanup(expireAfter time.Duration) {
+	cutoff := time.Now().Add(-expireAfter)
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	for key, entry := range l.entries {
+		if entry.blockedUntil.After(time.Now()) {
+			continue
+		}
+		if entry.windowStart.Before(cutoff) {
+			delete(l.entries, key)
+		}
+	}
+}
+
+func startRateLimiterCleanup() {
+	if !atomic.CompareAndSwapUint32(&cleanupLimiterOnce, 0, 1) {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			rateLimiter.cleanup(30 * time.Minute)
+		}
+	}()
+}
+
+func applyRateLimit(w http.ResponseWriter, r *http.Request, scope string, rule rateLimitRule) (string, bool) {
+	clientIP, rawRemote := httpRemoteDetails(r)
+	if clientIP == "" {
+		clientIP = "unknown"
+	}
+
+	allowed, retryAfter := rateLimiter.allow(scope, clientIP, rule)
+	if allowed {
+		return clientIP, true
+	}
+
+	retrySeconds := int(retryAfter.Seconds())
+	if retrySeconds < 1 {
+		retrySeconds = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(retrySeconds))
+	logConnectionEvent("http", clientIP, fmt.Sprintf("rate_limited scope=%s retry_after=%ds raw_remote=%s", scope, retrySeconds, rawRemote))
+	http.Error(w, "too many requests", http.StatusTooManyRequests)
+	return clientIP, false
 }
 
 func resolveReceiveHost(r *http.Request) string {
@@ -856,6 +981,7 @@ func startWebServer(addr string) {
 		fmt.Printf("Error creando directorio de logs %s: %v\n", logDir, err)
 		return
 	}
+	startRateLimiterCleanup()
 
 	mux := http.NewServeMux()
 
@@ -869,6 +995,10 @@ func startWebServer(addr string) {
 
 	// Endpoint de subida: acepta multipart/form-data con campo "file" y opcional "code".
 	mux.HandleFunc("/api/upload", func(w http.ResponseWriter, r *http.Request) {
+		clientIP, allowed := applyRateLimit(w, r, "upload", uploadRateRule)
+		if !allowed {
+			return
+		}
 		clientIP, rawRemote := httpRemoteDetails(r)
 		logConnectionEvent("http", clientIP, fmt.Sprintf("%s %s raw_remote=%s", r.Method, r.URL.Path, rawRemote))
 		if r.Method != http.MethodPost {
@@ -908,6 +1038,10 @@ func startWebServer(addr string) {
 
 	// Endpoint para pegar texto/script desde web y mandarlo como archivo AirSend.
 	mux.HandleFunc("/api/paste", func(w http.ResponseWriter, r *http.Request) {
+		clientIP, allowed := applyRateLimit(w, r, "paste", pasteRateRule)
+		if !allowed {
+			return
+		}
 		clientIP, rawRemote := httpRemoteDetails(r)
 		logConnectionEvent("http", clientIP, fmt.Sprintf("%s %s raw_remote=%s", r.Method, r.URL.Path, rawRemote))
 		if r.Method != http.MethodPost {
@@ -969,6 +1103,10 @@ func startWebServer(addr string) {
 
 	// Endpoint de descarga por código.
 	mux.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
+		clientIP, allowed := applyRateLimit(w, r, "download", downloadRateRule)
+		if !allowed {
+			return
+		}
 		clientIP, rawRemote := httpRemoteDetails(r)
 		logConnectionEvent("http", clientIP, fmt.Sprintf("%s %s code=%s raw_remote=%s", r.Method, r.URL.Path, r.URL.Query().Get("code"), rawRemote))
 		code := r.URL.Query().Get("code")
@@ -985,6 +1123,9 @@ func startWebServer(addr string) {
 		pendingFilesLock.Unlock()
 
 		if !ok {
+			if _, missAllowed := rateLimiter.allow("download_miss", clientIP, downloadMissRateRule); !missAllowed {
+				logConnectionEvent("http", clientIP, fmt.Sprintf("download_miss_blocked code=%s raw_remote=%s", code, rawRemote))
+			}
 			logConnectionEvent("http", clientIP, fmt.Sprintf("download_miss code=%s raw_remote=%s", code, rawRemote))
 			http.Error(w, "code not found", http.StatusNotFound)
 			return
@@ -999,7 +1140,24 @@ func startWebServer(addr string) {
 
 	// WebSocket chat, compatible con -m/-mr (usa el mismo handleChatOrRelay).
 	mux.Handle("/ws", websocket.Handler(func(ws *websocket.Conn) {
-		logConnectionEvent("ws", ws.Request().RemoteAddr, fmt.Sprintf("connect path=%s", ws.Request().URL.Path))
+		req := ws.Request()
+		clientIP := clientAddressFromRequest(req)
+		if clientIP == "" {
+			clientIP = normalizeClientIP(req.RemoteAddr)
+		}
+		allowed, retryAfter := rateLimiter.allow("ws", clientIP, wsRateRule)
+		if !allowed {
+			retrySeconds := int(retryAfter.Seconds())
+			if retrySeconds < 1 {
+				retrySeconds = 1
+			}
+			logConnectionEvent("ws", clientIP, fmt.Sprintf("rate_limited scope=ws retry_after=%ds path=%s", retrySeconds, req.URL.Path))
+			ws.Write([]byte("too many requests\n"))
+			ws.Close()
+			return
+		}
+
+		logConnectionEvent("ws", req.RemoteAddr, fmt.Sprintf("connect path=%s client_ip=%s", req.URL.Path, clientIP))
 		code := ws.Request().URL.Query().Get("code")
 		if code == "" {
 			logConnectionEvent("ws", ws.Request().RemoteAddr, "connect_rejected missing_code")
