@@ -2,3 +2,4 @@
 .gocache/
 bin/
 airsend
+airsend-logs/connections.log
