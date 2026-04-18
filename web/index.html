@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AirSend Web</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg:       #05020f;
+  --bg-2:     #0a0520;
+  --panel:    #0d0823;
+  --line:     rgba(168, 85, 247, 0.18);
+  --line-2:   rgba(34, 211, 238, 0.14);
+
+  --text:     #e9e6ff;
+  --muted:    #9a92c7;
+  --dim:      #6b6494;
+
+  --purple:   #a855f7;
+  --fuchsia:  #d946ef;
+  --cyan:     #22d3ee;
+  --lime:     #a3e635;
+
+  --glow-p:   0 0 24px rgba(168, 85, 247, 0.45);
+  --glow-c:   0 0 24px rgba(34, 211, 238, 0.45);
+  --glow-f:   0 0 24px rgba(217, 70, 239, 0.45);
+
+  --radius:   14px;
+  --radius-sm: 8px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Ambient gradient + grid */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 0%, rgba(168, 85, 247, 0.18), transparent 60%),
+    radial-gradient(ellipse 60% 50% at 80% 10%, rgba(34, 211, 238, 0.14), transparent 60%),
+    radial-gradient(ellipse 70% 40% at 50% 100%, rgba(217, 70, 239, 0.12), transparent 60%),
+    var(--bg);
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(168, 85, 247, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 100% 60% at 50% 20%, #000 40%, transparent 90%);
+}
+
+.mono, code { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+h1 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 32px;
+  background: linear-gradient(110deg, var(--cyan), var(--purple) 50%, var(--fuchsia));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+h3 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  margin: 0 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+h3::before {
+  content: "";
+  width: 8px; height: 8px;
+  border-radius: 2px;
+  background: var(--cyan);
+  box-shadow: var(--glow-c);
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 48px 24px 64px;
+}
+
+/* Cards */
+.card {
+  background: linear-gradient(180deg, rgba(168, 85, 247, 0.04), rgba(13, 8, 35, 0.6));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 20px;
+  transition: border-color 0.25s ease;
+}
+.card:hover { border-color: rgba(168, 85, 247, 0.4); }
+
+.file-stack {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.file-block {
+  background: rgba(13, 8, 35, 0.5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 18px;
+  transition: border-color 0.25s ease;
+}
+.file-block:hover { border-color: rgba(34, 211, 238, 0.35); }
+
+.file-block h4 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fuchsia);
+  margin: 0 0 14px;
+}
+
+/* Form elements */
+label {
+  display: block;
+  margin: 14px 0 6px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+input, textarea {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  font-family: 'JetBrains Mono', monospace;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: rgba(13, 8, 35, 0.7);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+input:focus, textarea:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12);
+}
+input::placeholder, textarea::placeholder { color: var(--dim); }
+
+/* Buttons */
+button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  transition: all 0.2s ease;
+}
+
+.btn-upload {
+  background: linear-gradient(135deg, var(--purple), var(--fuchsia));
+  color: #fff;
+  box-shadow: var(--glow-p);
+}
+.btn-upload:hover {
+  box-shadow: 0 0 32px rgba(217, 70, 239, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-download {
+  background: rgba(34, 211, 238, 0.1);
+  color: var(--cyan);
+  border-color: rgba(34, 211, 238, 0.3);
+}
+.btn-download:hover {
+  background: rgba(34, 211, 238, 0.18);
+  color: #fff;
+  box-shadow: var(--glow-c);
+}
+
+.btn-send {
+  background: linear-gradient(135deg, var(--purple), var(--fuchsia));
+  color: #fff;
+  box-shadow: var(--glow-p);
+}
+.btn-send:hover {
+  box-shadow: 0 0 32px rgba(217, 70, 239, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-connect {
+  background: rgba(34, 211, 238, 0.1);
+  color: var(--cyan);
+  border-color: rgba(34, 211, 238, 0.3);
+  margin-top: 20px;
+}
+.btn-connect:hover {
+  background: rgba(34, 211, 238, 0.18);
+  color: #fff;
+  box-shadow: var(--glow-c);
+}
+
+#sendBtn {
+  background: rgba(34, 211, 238, 0.1);
+  color: var(--cyan);
+  border-color: rgba(34, 211, 238, 0.3);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  width: 100px;
+  margin: 0;
+  justify-content: center;
+}
+#sendBtn:hover {
+  background: rgba(34, 211, 238, 0.18);
+  color: #fff;
+  box-shadow: var(--glow-c);
+}
+
+/* Status messages */
+#status, #pasteStatus {
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--lime);
+}
+
+.form-actions {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.upload-meta { line-height: 1.3; }
+.upload-meta-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fuchsia);
+  font-weight: 600;
+}
+.upload-meta-file {
+  margin-top: 3px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.result-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--fuchsia);
+}
+.code-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--dim);
+  margin-right: 6px;
+  letter-spacing: 0.08em;
+}
+
+/* Paste textarea */
+#pasteText {
+  min-height: 180px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+/* Chat */
+#chatLog {
+  background: rgba(13, 8, 35, 0.7);
+  border: 1px solid var(--line);
+  color: var(--text);
+  min-height: 260px;
+  max-height: 380px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+.chat-row {
+  margin-top: 10px;
+  display: flex;
+  gap: 0;
+}
+#chatInput {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  width: calc(100% - 100px);
+  font-size: 0.88rem;
+}
+
+a {
+  color: var(--cyan);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+a:hover { color: var(--fuchsia); }
+
+@media (max-width: 640px) {
+  body { padding: 0; }
+  h1 { font-size: 1.5rem; }
+  .file-stack { grid-template-columns: 1fr; }
+  .chat-row { flex-direction: column; }
+  #chatInput, #sendBtn { width: 100%; border-radius: var(--radius-sm); }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>AirSend</h1>
+
+  <!-- FILES -->
+  <div class="card">
+    <h3>Files</h3>
+    <div class="file-stack">
+      <div class="file-block">
+        <h4>Upload</h4>
+        <form id="uploadForm">
+          <label>File</label>
+          <input name="file" type="file" required>
+          <label>Code (optional)</label>
+          <input name="code" placeholder="e.g. dock42">
+          <div class="form-actions">
+            <button class="btn-upload" type="submit">Upload</button>
+            <div id="uploadCode"></div>
+          </div>
+        </form>
+        <p id="status"></p>
+      </div>
+
+      <div class="file-block">
+        <h4>Download</h4>
+        <form id="downloadForm">
+          <label>Code</label>
+          <input id="downloadCode" name="code" required placeholder="e.g. wave21">
+          <div class="form-actions">
+            <button class="btn-download" type="submit">Download</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- PASTE -->
+  <div class="card">
+    <h3>Paste / Text</h3>
+    <form id="pasteForm">
+      <label>Filename (optional)</label>
+      <input id="pasteFilename" name="filename" placeholder="script.sh">
+      <label>Code (optional)</label>
+      <input id="pasteCode" name="code" placeholder="e.g. mint21">
+      <label>Text to send</label>
+      <textarea id="pasteText" name="text" required></textarea>
+      <div class="form-actions">
+        <button class="btn-send" type="submit">Send Text</button>
+        <div id="pasteCodeOut"></div>
+      </div>
+    </form>
+    <p id="pasteStatus"></p>
+    <a id="pasteDownloadLink" href="#" style="display:none;">Download this file</a>
+  </div>
+
+  <!-- CHAT -->
+  <div class="card">
+    <h3>Chat</h3>
+    <form id="chatForm">
+      <label>Code</label>
+      <input id="chatCode" required placeholder="e.g. neon-lab">
+      <button class="btn-connect" type="button" id="connectBtn">Connect</button>
+    </form>
+    <div style="margin-top:16px;">
+      <textarea id="chatLog" rows="12" readonly></textarea>
+      <div class="chat-row">
+        <textarea id="chatInput" rows="3" placeholder="Type message..."></textarea>
+        <button id="sendBtn" type="button">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const statusEl         = document.getElementById('status');
+const uploadCodeEl     = document.getElementById('uploadCode');
+const pasteCodeOutEl   = document.getElementById('pasteCodeOut');
+const pasteStatusEl    = document.getElementById('pasteStatus');
+const pasteDownloadLink= document.getElementById('pasteDownloadLink');
+const downloadCodeInput= document.getElementById('downloadCode');
+
+const escapeHtml = v => String(v ?? '').replace(/[&<>"']/g, c =>
+  ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+
+const parseApiResponse = async r => {
+  const raw = await r.text();
+  try { return { ok: r.ok, data: JSON.parse(raw), raw }; }
+  catch (_) { return { ok: r.ok, data: null, raw }; }
+};
+
+document.getElementById('uploadForm').onsubmit = async e => {
+  e.preventDefault();
+  const data = new FormData(e.target);
+  statusEl.textContent = 'uploading...';
+  uploadCodeEl.innerHTML = '';
+  try {
+    const res    = await fetch('/api/upload', { method: 'POST', body: data });
+    const parsed = await parseApiResponse(res);
+    if (!parsed.ok || !parsed.data) {
+      statusEl.textContent = parsed.raw || 'upload failed';
+      return;
+    }
+    downloadCodeInput.value = parsed.data.code;
+    const safeFile = escapeHtml(parsed.data.filename || '');
+    const safeCode = escapeHtml(parsed.data.code     || '');
+    statusEl.innerHTML =
+      `<div class="upload-meta">
+        <div class="upload-meta-label">uploaded</div>
+        <div class="upload-meta-file">${safeFile}</div>
+      </div>`;
+    uploadCodeEl.innerHTML =
+      `<span class="code-label">code:</span><span class="result-code">${safeCode}</span>`;
+  } catch (err) {
+    statusEl.textContent = 'error: ' + err;
+    uploadCodeEl.innerHTML = '';
+  }
+};
+
+document.getElementById('pasteForm').onsubmit = async e => {
+  e.preventDefault();
+  pasteStatusEl.textContent = 'sending...';
+  pasteDownloadLink.style.display = 'none';
+  pasteCodeOutEl.innerHTML = '';
+  const payload = {
+    filename: document.getElementById('pasteFilename').value,
+    code:     document.getElementById('pasteCode').value,
+    text:     document.getElementById('pasteText').value,
+  };
+  try {
+    const res    = await fetch('/api/paste', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const parsed = await parseApiResponse(res);
+    if (!parsed.ok || !parsed.data) {
+      pasteStatusEl.textContent = parsed.raw || 'send failed';
+      return;
+    }
+    downloadCodeInput.value = parsed.data.code;
+    pasteStatusEl.textContent = '';
+    const safeCode = escapeHtml(parsed.data.code || '');
+    pasteCodeOutEl.innerHTML =
+      `<span class="code-label">code:</span><span class="result-code">${safeCode}</span>`;
+    pasteDownloadLink.href = '/api/download?code=' + encodeURIComponent(parsed.data.code);
+    pasteDownloadLink.style.display = 'inline';
+  } catch (err) {
+    pasteStatusEl.textContent = 'error: ' + err;
+    pasteCodeOutEl.innerHTML = '';
+  }
+};
+
+document.getElementById('downloadForm').onsubmit = e => {
+  e.preventDefault();
+  const code = new FormData(e.target).get('code');
+  window.location = '/api/download?code=' + encodeURIComponent(code);
+};
+
+let ws;
+const log   = document.getElementById('chatLog');
+const input = document.getElementById('chatInput');
+
+const appendLog = (prefix, text) => {
+  log.value += prefix + text + '\n';
+  log.scrollTop = log.scrollHeight;
+};
+
+document.getElementById('connectBtn').onclick = () => {
+  const code = document.getElementById('chatCode').value.trim();
+  if (!code) return alert('code required');
+  if (ws) ws.close();
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  ws = new WebSocket(proto + location.host + '/ws?code=' + encodeURIComponent(code));
+  ws.binaryType = 'arraybuffer';
+  ws.onopen    = () => { log.value += '// connected\n'; };
+  ws.onmessage = ev => {
+    const text = typeof ev.data === 'string'
+      ? ev.data
+      : new TextDecoder().decode(ev.data);
+    appendLog('peer: ', text.trim());
+  };
+  ws.onclose = () => { log.value += '// disconnected\n'; };
+  ws.onerror = err => { log.value += '// error: ' + err + '\n'; };
+};
+
+const sendMsg = () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return alert('not connected');
+  const msg = input.value;
+  if (!msg.trim()) return;
+  ws.send(new TextEncoder().encode(msg + '\n'));
+  appendLog('you: ', msg.trim());
+  input.value = '';
+};
+
+document.getElementById('sendBtn').onclick = sendMsg;
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+});
+</script>
+</body>
+</html>

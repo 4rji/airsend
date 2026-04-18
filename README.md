@@ -17,6 +17,14 @@
 - Web download forces save-as (no inline preview).
 - QUIC keepalive + 10 min idle timeout to avoid premature disconnects.
 
+## Desktop App (Wails)
+
+```bash
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+export PATH=$PATH:$(go env GOPATH)/bin
+wails build -platform darwin/universal
+```
+
 ## Run (web + QUIC)
 ```bash
 # or, with sudo if you want QUIC on 443:

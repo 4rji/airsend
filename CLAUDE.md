@@ -19,6 +19,11 @@ go run . -sw 0.0.0.0 3888 0.0.0.0 443     # sudo needed for QUIC on 443
 # Tidy / clean
 make tidy
 make clean
+
+# Desktop app (Wails)
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+export PATH=$PATH:$(go env GOPATH)/bin
+wails build -platform darwin/universal
 ```
 
 Build always includes both `main.go` and `chat-window.go` (see `MAIN_FILES` in Makefile). Building only `main.go` will fail because `RunChatUI` lives in the other file.
