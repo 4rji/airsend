@@ -18,12 +18,32 @@ export function ChatStatus() {
   return window['go']['main']['App']['ChatStatus']();
 }
 
+export function FileRecv(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['FileRecv'](arg1, arg2, arg3, arg4);
+}
+
+export function FileSend(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['FileSend'](arg1, arg2, arg3, arg4);
+}
+
+export function FileSendText(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['FileSendText'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function GenerateCode() {
   return window['go']['main']['App']['GenerateCode']();
 }
 
 export function GetServerStatus() {
   return window['go']['main']['App']['GetServerStatus']();
+}
+
+export function PickFile() {
+  return window['go']['main']['App']['PickFile']();
+}
+
+export function PickSaveDir() {
+  return window['go']['main']['App']['PickSaveDir']();
 }
 
 export function StartServer(arg1, arg2, arg3, arg4) {

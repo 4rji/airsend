@@ -153,13 +153,162 @@
     });
   }
 
+  // --- tabs ------------------------------------------------------------------
+
+  const activateTab = (name) => {
+    document.querySelectorAll(".tab-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.tab === name);
+    });
+    document.querySelectorAll(".view").forEach((v) => {
+      v.classList.toggle("active", v.id === `view-${name}`);
+    });
+    // input bar only visible on chat tab
+    $("inputBar").style.display = name === "chat" ? "" : "none";
+    if (name === "chat" && state.chat.connected) $("chatInput").focus();
+    refreshServerUI();
+  };
+
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => activateTab(btn.dataset.tab));
+  });
+
+  // --- file transfer over QUIC relay ----------------------------------------
+
+  const fileState = {
+    pickedPath: "",
+    saveDir: "",
+  };
+
+  const updateRelayNotes = () => {
+    const { relayHost, relayPort } = state.settings;
+    const note = `via ${relayHost}:${relayPort}`;
+    ["uploadRelayNote", "pasteRelayNote", "downloadRelayNote"].forEach((id) => {
+      const el = $(id);
+      if (el) el.textContent = note;
+    });
+  };
+
+  const appendLog = (id, text) => {
+    const el = $(id);
+    el.textContent += (el.textContent ? "\n" : "") + text;
+    el.scrollTop = el.scrollHeight;
+  };
+
+  const basename = (p) => p.split(/[\\/]/).pop() || p;
+  const humanBytes = (n) => {
+    if (n < 1024) return `${n}B`;
+    const units = ["KB", "MB", "GB", "TB"];
+    let v = n / 1024, i = 0;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return `${v.toFixed(2)}${units[i]}`;
+  };
+
+  $("pickFileBtn").addEventListener("click", async () => {
+    try {
+      const path = await window.go.main.App.PickFile();
+      if (!path) return;
+      fileState.pickedPath = path;
+      $("pickedFile").textContent = basename(path);
+    } catch (e) {
+      appendLog("uploadStatus", `pick failed: ${e}`);
+    }
+  });
+
+  $("uploadBtn").addEventListener("click", async () => {
+    if (!fileState.pickedPath) return alert("choose a file first");
+    const { relayHost, relayPort } = state.settings;
+    const code = $("sendFileCode").value.trim();
+    $("uploadBtn").disabled = true;
+    appendLog("uploadStatus", `uploading ${basename(fileState.pickedPath)}…`);
+    try {
+      const r = await window.go.main.App.FileSend(
+        fileState.pickedPath,
+        code,
+        relayHost,
+        relayPort,
+      );
+      appendLog(
+        "uploadStatus",
+        `done\ncode: ${r.code}\nfilename: ${r.filename}\nsize: ${humanBytes(r.size)}`,
+      );
+    } catch (e) {
+      appendLog("uploadStatus", `upload failed: ${e}`);
+    } finally {
+      $("uploadBtn").disabled = false;
+    }
+  });
+
+  $("pasteBtn").addEventListener("click", async () => {
+    const text = $("pasteBody").value;
+    if (!text) return alert("nothing to send");
+    const { relayHost, relayPort } = state.settings;
+    const filename = $("pasteFilename").value.trim();
+    const code = $("pasteCode").value.trim();
+    $("pasteBtn").disabled = true;
+    appendLog("pasteStatus", `sending text (${humanBytes(new Blob([text]).size)})…`);
+    try {
+      const r = await window.go.main.App.FileSendText(
+        text,
+        filename,
+        code,
+        relayHost,
+        relayPort,
+      );
+      appendLog(
+        "pasteStatus",
+        `done\ncode: ${r.code}\nfilename: ${r.filename}\nsize: ${humanBytes(r.size)}`,
+      );
+    } catch (e) {
+      appendLog("pasteStatus", `send failed: ${e}`);
+    } finally {
+      $("pasteBtn").disabled = false;
+    }
+  });
+
+  $("pickSaveDirBtn").addEventListener("click", async () => {
+    try {
+      const dir = await window.go.main.App.PickSaveDir();
+      if (!dir) return;
+      fileState.saveDir = dir;
+      $("saveDirLabel").textContent = dir;
+    } catch (e) {
+      appendLog("downloadStatus", `pick failed: ${e}`);
+    }
+  });
+
+  $("downloadBtn").addEventListener("click", async () => {
+    const code = $("downloadCode").value.trim();
+    if (!code) return alert("enter a code");
+    const { relayHost, relayPort } = state.settings;
+    $("downloadBtn").disabled = true;
+    appendLog("downloadStatus", `downloading ${code}…`);
+    try {
+      const r = await window.go.main.App.FileRecv(
+        code,
+        fileState.saveDir,
+        relayHost,
+        relayPort,
+      );
+      appendLog(
+        "downloadStatus",
+        `saved: ${r.path}\nsize: ${humanBytes(r.size)}`,
+      );
+    } catch (e) {
+      appendLog("downloadStatus", `download failed: ${e}`);
+    } finally {
+      $("downloadBtn").disabled = false;
+    }
+  });
+
   // --- keyboard shortcuts ---------------------------------------------------
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (!$("settingsModal").hidden) {
         closeSettings();
-      } else {
+      } else if (
+        document.querySelector(".view.active")?.id === "view-chat"
+      ) {
         clearChat();
       }
     }
@@ -219,6 +368,7 @@
     $("serverUrl").textContent = running
       ? `${webUrl} (pid ${pid || "?"})`
       : "not running";
+    if (typeof updateServerNotes === "function") updateServerNotes();
   };
 
   const refreshServerStatus = async () => {

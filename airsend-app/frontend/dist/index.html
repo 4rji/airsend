@@ -18,7 +18,15 @@
     </div>
   </header>
 
-  <main class="chat-main">
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="chat">chat</button>
+    <button class="tab-btn" data-tab="send">send file</button>
+    <button class="tab-btn" data-tab="paste">send text</button>
+    <button class="tab-btn" data-tab="recv">receive</button>
+  </nav>
+
+  <!-- chat view -->
+  <main id="view-chat" class="view chat-main active">
     <aside class="code-pane">
       <div class="pane-title">code</div>
       <div class="code-body">
@@ -43,10 +51,71 @@
     </section>
   </main>
 
-  <footer class="input-bar">
+  <footer id="inputBar" class="input-bar">
     <span class="prompt">&gt;</span>
     <input id="chatInput" type="text" placeholder="type a message and press enter" disabled autocomplete="off" />
   </footer>
+
+  <!-- send file view -->
+  <main id="view-send" class="view file-view">
+    <section class="file-panel">
+      <div class="pane-title">send file</div>
+      <p class="muted">
+        uploads a file over QUIC to the <b>relay</b> configured in settings.
+        same transport as <code>airsend -f</code>.
+      </p>
+      <div class="row">
+        <button id="pickFileBtn" class="ghost small">choose file…</button>
+        <span id="pickedFile" class="muted">no file selected</span>
+      </div>
+      <input id="sendFileCode" type="text" placeholder="code (optional — generated if empty)" autocomplete="off" />
+      <div class="actions">
+        <button id="uploadBtn" class="primary">upload</button>
+        <span id="uploadRelayNote" class="muted"></span>
+      </div>
+      <pre id="uploadStatus" class="log"></pre>
+    </section>
+  </main>
+
+  <!-- send text view -->
+  <main id="view-paste" class="view file-view">
+    <section class="file-panel">
+      <div class="pane-title">send text</div>
+      <p class="muted">
+        uploads a text/script payload over QUIC to the relay. peers download
+        it with <code>airsend -r &lt;code&gt;</code> or from this app's
+        <b>receive</b> tab.
+      </p>
+      <input id="pasteFilename" type="text" placeholder="filename (optional, e.g. note.txt)" autocomplete="off" />
+      <input id="pasteCode" type="text" placeholder="code (optional — generated if empty)" autocomplete="off" />
+      <textarea id="pasteBody" placeholder="paste or type here…"></textarea>
+      <div class="actions">
+        <button id="pasteBtn" class="primary">send</button>
+        <span id="pasteRelayNote" class="muted"></span>
+      </div>
+      <pre id="pasteStatus" class="log"></pre>
+    </section>
+  </main>
+
+  <!-- receive view -->
+  <main id="view-recv" class="view file-view">
+    <section class="file-panel">
+      <div class="pane-title">receive</div>
+      <p class="muted">
+        downloads a file from the relay by code. files save to
+        <code id="saveDirLabel">~/Downloads</code>.
+      </p>
+      <div class="row">
+        <input id="downloadCode" type="text" placeholder="code" autocomplete="off" />
+        <button id="pickSaveDirBtn" class="ghost small">folder…</button>
+      </div>
+      <div class="actions">
+        <button id="downloadBtn" class="primary">download</button>
+        <span id="downloadRelayNote" class="muted"></span>
+      </div>
+      <pre id="downloadStatus" class="log"></pre>
+    </section>
+  </main>
 
   <!-- settings modal -->
   <div id="settingsModal" class="modal-backdrop" hidden>
@@ -59,7 +128,7 @@
       <section class="settings-section">
         <h3>relay</h3>
         <p class="muted">
-          remote server used when joining a chat room. default connects to
+          remote server used for chat. default connects to
           <code>airsend.4rji.com:443</code>.
         </p>
         <div class="grid two">
@@ -71,8 +140,8 @@
       <section class="settings-section">
         <h3>local server</h3>
         <p class="muted">
-          optional — run your own <code>airsend -sw</code> relay locally. leave
-          untouched if you use the public one above.
+          required for file send/receive. starts
+          <code>airsend -sw</code> locally.
         </p>
         <div class="grid">
           <label>web host<input id="webHost" type="text" value="127.0.0.1" /></label>

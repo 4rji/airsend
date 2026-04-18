@@ -10,9 +10,19 @@ export function ChatSend(arg1:string):Promise<void>;
 
 export function ChatStatus():Promise<main.ChatStatus>;
 
+export function FileRecv(arg1:string,arg2:string,arg3:string,arg4:number):Promise<main.FileRecvResult>;
+
+export function FileSend(arg1:string,arg2:string,arg3:string,arg4:number):Promise<main.FileSendResult>;
+
+export function FileSendText(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number):Promise<main.FileSendResult>;
+
 export function GenerateCode():Promise<string>;
 
 export function GetServerStatus():Promise<main.ServerStatus>;
+
+export function PickFile():Promise<string>;
+
+export function PickSaveDir():Promise<string>;
 
 export function StartServer(arg1:string,arg2:number,arg3:string,arg4:number):Promise<string>;
 

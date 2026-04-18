@@ -48,6 +48,18 @@ type ChatStatus struct {
 	Code      string `json:"code"`
 }
 
+type FileSendResult struct {
+	Code     string `json:"code"`
+	Filename string `json:"filename"`
+	Size     int64  `json:"size"`
+}
+
+type FileRecvResult struct {
+	Filename string `json:"filename"`
+	Size     int64  `json:"size"`
+	Path     string `json:"path"`
+}
+
 func NewApp() *App {
 	return &App{}
 }
@@ -63,7 +75,6 @@ func (a *App) shutdown(ctx context.Context) {
 
 // --- local server lifecycle ------------------------------------------------
 
-// StartServer spawns `airsend -sw <webHost> <webPort> <quicHost> <quicPort>`.
 func (a *App) StartServer(webHost string, webPort int, quicHost string, quicPort int) (string, error) {
 	a.srvMu.Lock()
 	defer a.srvMu.Unlock()
@@ -142,6 +153,29 @@ func (a *App) GetServerStatus() ServerStatus {
 	return s
 }
 
+// --- QUIC relay dial (shared by chat + file) -------------------------------
+
+func dialRelay(ctx context.Context, addr string) (*quic.Conn, *quic.Stream, error) {
+	tlsConf := &tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"airsend"},
+	}
+	quicConf := &quic.Config{
+		KeepAlivePeriod: 2 * time.Minute,
+		MaxIdleTimeout:  10 * time.Minute,
+	}
+	qconn, err := quic.DialAddr(ctx, addr, tlsConf, quicConf)
+	if err != nil {
+		return nil, nil, err
+	}
+	stream, err := qconn.OpenStreamSync(ctx)
+	if err != nil {
+		_ = qconn.CloseWithError(0, "open stream failed")
+		return nil, nil, err
+	}
+	return qconn, stream, nil
+}
+
 // --- chat over QUIC (mirrors main.go -m mode) ------------------------------
 
 func (a *App) GenerateCode() string {
@@ -154,9 +188,6 @@ func (a *App) ChatStatus() ChatStatus {
 	return ChatStatus{Connected: a.chatStream != nil, Code: a.chatCode}
 }
 
-// ChatConnect dials the relay over QUIC, opens a stream, sends the code,
-// then streams incoming peer lines via the "chat:message" Wails event.
-// Returns the effective code used (generated if `code` was empty).
 func (a *App) ChatConnect(code, host string, port int) (string, error) {
 	a.chatMu.Lock()
 	if a.chatStream != nil {
@@ -181,23 +212,9 @@ func (a *App) ChatConnect(code, host string, port int) (string, error) {
 	dialCtx, dialCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer dialCancel()
 
-	tlsConf := &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"airsend"},
-	}
-	quicConf := &quic.Config{
-		KeepAlivePeriod: 2 * time.Minute,
-		MaxIdleTimeout:  10 * time.Minute,
-	}
-
-	qconn, err := quic.DialAddr(dialCtx, addr, tlsConf, quicConf)
+	qconn, stream, err := dialRelay(dialCtx, addr)
 	if err != nil {
 		return "", fmt.Errorf("dial %s: %w", addr, err)
-	}
-	stream, err := qconn.OpenStreamSync(dialCtx)
-	if err != nil {
-		_ = qconn.CloseWithError(0, "open stream failed")
-		return "", fmt.Errorf("open stream: %w", err)
 	}
 
 	writer := bufio.NewWriter(stream)
@@ -303,7 +320,235 @@ func (a *App) ChatLeave() error {
 	return nil
 }
 
+// --- file transfer over QUIC (mirrors -f / -r modes) -----------------------
+
+// PickFile opens the native file picker and returns the selected absolute path.
+// Returns an empty string if the user cancels.
+func (a *App) PickFile() (string, error) {
+	if a.ctx == nil {
+		return "", fmt.Errorf("app not ready")
+	}
+	return wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title: "Select a file to send",
+	})
+}
+
+// PickSaveDir opens the native directory picker for choosing a download target.
+func (a *App) PickSaveDir() (string, error) {
+	if a.ctx == nil {
+		return "", fmt.Errorf("app not ready")
+	}
+	return wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title: "Choose download folder",
+	})
+}
+
+// FileSend uploads a local file to the relay under the given code.
+// If code is empty, one is generated and returned.
+func (a *App) FileSend(path, code, host string, port int) (FileSendResult, error) {
+	var empty FileSendResult
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return empty, fmt.Errorf("file not found: %w", err)
+	}
+	if info.IsDir() {
+		return empty, fmt.Errorf("path is a directory")
+	}
+	return a.sendBody(path, filepath.Base(path), info.Size(), nil, code, host, port)
+}
+
+// FileSendText sends a text/script payload as a file under the given code.
+func (a *App) FileSendText(text, filename, code, host string, port int) (FileSendResult, error) {
+	var empty FileSendResult
+	if text == "" {
+		return empty, fmt.Errorf("text is empty")
+	}
+	if strings.TrimSpace(filename) == "" {
+		filename = fmt.Sprintf("pasted-%d.txt", time.Now().Unix())
+	}
+	body := []byte(text)
+	return a.sendBody("", filename, int64(len(body)), body, code, host, port)
+}
+
+// sendBody performs the FILE SEND flow. Either `path` is set (streams the file)
+// or `body` is set (writes the byte slice directly).
+func (a *App) sendBody(path, filename string, size int64, body []byte, code, host string, port int) (FileSendResult, error) {
+	var empty FileSendResult
+
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return empty, fmt.Errorf("relay host required")
+	}
+	if port <= 0 {
+		return empty, fmt.Errorf("relay port required")
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		code = generateCode()
+	}
+
+	addr := fmt.Sprintf("%s:%d", host, port)
+	dialCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	qconn, stream, err := dialRelay(dialCtx, addr)
+	if err != nil {
+		return empty, fmt.Errorf("dial %s: %w", addr, err)
+	}
+	defer func() {
+		_ = stream.Close()
+		_ = qconn.CloseWithError(0, "done")
+	}()
+
+	writer := bufio.NewWriter(stream)
+	headers := []string{"FILE SEND", code, filename, strconv.FormatInt(size, 10)}
+	for _, h := range headers {
+		if _, err := writer.WriteString(h + "\n"); err != nil {
+			return empty, fmt.Errorf("send header %q: %w", h, err)
+		}
+	}
+	if err := writer.Flush(); err != nil {
+		return empty, fmt.Errorf("flush headers: %w", err)
+	}
+
+	if body != nil {
+		if _, err := writer.Write(body); err != nil {
+			return empty, fmt.Errorf("write body: %w", err)
+		}
+	} else {
+		f, err := os.Open(path)
+		if err != nil {
+			return empty, fmt.Errorf("open file: %w", err)
+		}
+		if _, err := io.CopyN(writer, f, size); err != nil {
+			_ = f.Close()
+			return empty, fmt.Errorf("stream file: %w", err)
+		}
+		_ = f.Close()
+	}
+	if err := writer.Flush(); err != nil {
+		return empty, fmt.Errorf("flush body: %w", err)
+	}
+
+	_ = stream.SetReadDeadline(time.Now().Add(5 * time.Minute))
+	resp, err := bufio.NewReader(stream).ReadString('\n')
+	if err != nil {
+		return empty, fmt.Errorf("wait confirmation: %w", err)
+	}
+	if strings.TrimSpace(resp) != "OK" {
+		return empty, fmt.Errorf("server refused: %q", strings.TrimSpace(resp))
+	}
+
+	return FileSendResult{Code: code, Filename: filename, Size: size}, nil
+}
+
+// FileRecv downloads a file by code to saveDir (defaults to ~/Downloads).
+func (a *App) FileRecv(code, saveDir, host string, port int) (FileRecvResult, error) {
+	var empty FileRecvResult
+
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return empty, fmt.Errorf("code required")
+	}
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return empty, fmt.Errorf("relay host required")
+	}
+	if port <= 0 {
+		return empty, fmt.Errorf("relay port required")
+	}
+	if strings.TrimSpace(saveDir) == "" {
+		saveDir = defaultDownloadsDir()
+	}
+	if err := os.MkdirAll(saveDir, 0o755); err != nil {
+		return empty, fmt.Errorf("prepare save dir: %w", err)
+	}
+
+	addr := fmt.Sprintf("%s:%d", host, port)
+	dialCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	qconn, stream, err := dialRelay(dialCtx, addr)
+	if err != nil {
+		return empty, fmt.Errorf("dial %s: %w", addr, err)
+	}
+	defer func() {
+		_ = stream.Close()
+		_ = qconn.CloseWithError(0, "done")
+	}()
+
+	writer := bufio.NewWriter(stream)
+	if _, err := writer.WriteString("FILE RECV\n" + code + "\n"); err != nil {
+		return empty, fmt.Errorf("send headers: %w", err)
+	}
+	if err := writer.Flush(); err != nil {
+		return empty, fmt.Errorf("flush headers: %w", err)
+	}
+
+	_ = stream.SetReadDeadline(time.Now().Add(30 * time.Second))
+	reader := bufio.NewReader(stream)
+	filename, err := reader.ReadString('\n')
+	if err != nil {
+		return empty, fmt.Errorf("read filename: %w", err)
+	}
+	filename = strings.TrimSpace(filename)
+	if filename == "" || filename == "ERR" {
+		return empty, fmt.Errorf("file not available for code %q", code)
+	}
+
+	sizeStr, err := reader.ReadString('\n')
+	if err != nil {
+		return empty, fmt.Errorf("read size: %w", err)
+	}
+	size, err := strconv.ParseInt(strings.TrimSpace(sizeStr), 10, 64)
+	if err != nil {
+		return empty, fmt.Errorf("parse size: %w", err)
+	}
+
+	outPath := uniquePath(saveDir, filename)
+	out, err := os.Create(outPath)
+	if err != nil {
+		return empty, fmt.Errorf("create file: %w", err)
+	}
+	_ = stream.SetReadDeadline(time.Time{}) // clear deadline; body can be large
+	n, err := io.CopyN(out, reader, size)
+	_ = out.Close()
+	if err != nil {
+		return empty, fmt.Errorf("receive body (%d/%d): %w", n, size, err)
+	}
+
+	return FileRecvResult{Filename: filename, Size: size, Path: outPath}, nil
+}
+
 // --- helpers ---------------------------------------------------------------
+
+func defaultDownloadsDir() string {
+	if home, err := os.UserHomeDir(); err == nil {
+		d := filepath.Join(home, "Downloads")
+		if info, err := os.Stat(d); err == nil && info.IsDir() {
+			return d
+		}
+		return home
+	}
+	return os.TempDir()
+}
+
+func uniquePath(dir, filename string) string {
+	base := filepath.Join(dir, filename)
+	if _, err := os.Stat(base); os.IsNotExist(err) {
+		return base
+	}
+	ext := filepath.Ext(filename)
+	stem := strings.TrimSuffix(filename, ext)
+	for i := 1; i < 10000; i++ {
+		candidate := filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, i, ext))
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate
+		}
+	}
+	return base
+}
 
 var chatCodeWords = []string{
 	"dock", "lamp", "mint", "reef", "glow", "bird", "leaf", "sand", "wave", "mist",

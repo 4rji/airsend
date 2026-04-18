@@ -14,6 +14,38 @@ export namespace main {
 	        this.code = source["code"];
 	    }
 	}
+	export class FileRecvResult {
+	    filename: string;
+	    size: number;
+	    path: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new FileRecvResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.filename = source["filename"];
+	        this.size = source["size"];
+	        this.path = source["path"];
+	    }
+	}
+	export class FileSendResult {
+	    code: string;
+	    filename: string;
+	    size: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new FileSendResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.filename = source["filename"];
+	        this.size = source["size"];
+	    }
+	}
 	export class ServerStatus {
 	    running: boolean;
 	    pid: number;
