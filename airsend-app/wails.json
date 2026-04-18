@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "airsend-app",
+  "outputfilename": "airsend-app",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "",
+  "author": {
+    "name": "4rji",
+    "email": ""
+  },
+  "info": {
+    "productName": "AirSend",
+    "productVersion": "0.1.0",
+    "copyright": "",
+    "comments": "AirSend desktop client"
+  }
+}

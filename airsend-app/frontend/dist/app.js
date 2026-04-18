@@ -1,0 +1,280 @@
+(() => {
+  const $ = (id) => document.getElementById(id);
+
+  const DEFAULTS = {
+    relayHost: "airsend.4rji.com",
+    relayPort: 443,
+    webHost: "127.0.0.1",
+    webPort: 3888,
+    quicHost: "127.0.0.1",
+    quicPort: 8443,
+  };
+  const SETTINGS_KEY = "airsend.settings.v2";
+
+  const loadSettings = () => {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (!raw) return { ...DEFAULTS };
+      return { ...DEFAULTS, ...JSON.parse(raw) };
+    } catch {
+      return { ...DEFAULTS };
+    }
+  };
+
+  const saveSettings = (s) => {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch {}
+  };
+
+  const state = {
+    settings: loadSettings(),
+    chat: { connected: false, code: "" },
+    server: { running: false, pid: 0, webUrl: "" },
+  };
+
+  // --- chat log helpers ------------------------------------------------------
+
+  const chatMsg = (kind, tag, text) => {
+    const area = $("chatArea");
+    const row = document.createElement("div");
+    row.className = `msg ${kind}`;
+    if (tag) {
+      const t = document.createElement("span");
+      t.className = "tag";
+      t.textContent = tag;
+      row.appendChild(t);
+    }
+    row.appendChild(document.createTextNode(text));
+    area.appendChild(row);
+    area.scrollTop = area.scrollHeight;
+  };
+
+  const clearChat = () => {
+    $("chatArea").innerHTML = "";
+  };
+
+  // --- chat connection -------------------------------------------------------
+
+  const setChatUI = () => {
+    const { connected, code } = state.chat;
+    $("statusText").textContent = connected
+      ? `connected · ${code}`
+      : "disconnected";
+    $("codeText").textContent = code || "—";
+    $("copyCodeBtn").disabled = !code;
+    $("joinCode").disabled = connected;
+    $("joinBtn").disabled = connected;
+    $("leaveBtn").disabled = !connected;
+    $("chatInput").disabled = !connected;
+    $("chatInput").placeholder = connected
+      ? "type a message and press enter"
+      : "join a room to start chatting";
+  };
+
+  const connect = async () => {
+    const userCode = $("joinCode").value.trim();
+    const { relayHost, relayPort } = state.settings;
+
+    chatMsg("sys", "", `connecting to ${relayHost}:${relayPort}…`);
+    try {
+      const code = await window.go.main.App.ChatConnect(
+        userCode,
+        relayHost,
+        relayPort,
+      );
+      state.chat = { connected: true, code };
+      setChatUI();
+      chatMsg("sys", "", `joined room ${code}`);
+      $("chatInput").focus();
+    } catch (e) {
+      chatMsg("sys", "", `connect failed: ${e}`);
+    }
+  };
+
+  const disconnect = async () => {
+    try { await window.go.main.App.ChatLeave(); } catch {}
+    state.chat = { connected: false, code: "" };
+    setChatUI();
+  };
+
+  $("joinBtn").addEventListener("click", connect);
+  $("leaveBtn").addEventListener("click", disconnect);
+  $("joinCode").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !state.chat.connected) connect();
+  });
+
+  $("copyCodeBtn").addEventListener("click", async () => {
+    if (!state.chat.code) return;
+    try {
+      await navigator.clipboard.writeText(state.chat.code);
+      chatMsg("sys", "", "code copied");
+    } catch {
+      chatMsg("sys", "", "copy failed");
+    }
+  });
+
+  // --- chat send -------------------------------------------------------------
+
+  const sendChat = async () => {
+    if (!state.chat.connected) return;
+    const input = $("chatInput");
+    const text = input.value;
+    if (!text) return;
+    try {
+      await window.go.main.App.ChatSend(text);
+      chatMsg("you", "you", text);
+      input.value = "";
+    } catch (e) {
+      chatMsg("sys", "", `send failed: ${e}`);
+    }
+  };
+
+  $("chatInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendChat();
+  });
+
+  // --- wails events ---------------------------------------------------------
+
+  if (window.runtime?.EventsOn) {
+    window.runtime.EventsOn("chat:message", (line) => {
+      chatMsg("peer", "peer", String(line));
+    });
+    window.runtime.EventsOn("chat:disconnected", () => {
+      if (state.chat.connected) chatMsg("sys", "", "disconnected from relay");
+      state.chat = { connected: false, code: "" };
+      setChatUI();
+    });
+    window.runtime.EventsOn("chat:error", (err) => {
+      chatMsg("sys", "", `chat error: ${err}`);
+    });
+    window.runtime.EventsOn("server:stopped", (msg) => {
+      state.server = { running: false, pid: 0, webUrl: "" };
+      refreshServerUI();
+      console.log("local server stopped:", msg);
+    });
+  }
+
+  // --- keyboard shortcuts ---------------------------------------------------
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (!$("settingsModal").hidden) {
+        closeSettings();
+      } else {
+        clearChat();
+      }
+    }
+  });
+
+  // --- settings modal --------------------------------------------------------
+
+  const fillSettingsForm = (s) => {
+    $("relayHost").value = s.relayHost;
+    $("relayPort").value = s.relayPort;
+    $("webHost").value = s.webHost;
+    $("webPort").value = s.webPort;
+    $("quicHost").value = s.quicHost;
+    $("quicPort").value = s.quicPort;
+  };
+
+  const openSettings = () => {
+    fillSettingsForm(state.settings);
+    $("settingsModal").hidden = false;
+  };
+
+  const closeSettings = () => {
+    $("settingsModal").hidden = true;
+  };
+
+  $("settingsBtn").addEventListener("click", openSettings);
+  $("settingsClose").addEventListener("click", closeSettings);
+
+  $("settingsModal").addEventListener("click", (e) => {
+    if (e.target.id === "settingsModal") closeSettings();
+  });
+
+  $("settingsReset").addEventListener("click", () => {
+    fillSettingsForm(DEFAULTS);
+  });
+
+  $("settingsSave").addEventListener("click", () => {
+    const next = {
+      relayHost: $("relayHost").value.trim() || DEFAULTS.relayHost,
+      relayPort: parseInt($("relayPort").value, 10) || DEFAULTS.relayPort,
+      webHost: $("webHost").value.trim() || DEFAULTS.webHost,
+      webPort: parseInt($("webPort").value, 10) || DEFAULTS.webPort,
+      quicHost: $("quicHost").value.trim() || DEFAULTS.quicHost,
+      quicPort: parseInt($("quicPort").value, 10) || DEFAULTS.quicPort,
+    };
+    state.settings = next;
+    saveSettings(next);
+    closeSettings();
+  });
+
+  // --- local server (inside settings) ---------------------------------------
+
+  const refreshServerUI = () => {
+    const { running, pid, webUrl } = state.server;
+    $("startServer").disabled = running;
+    $("stopServer").disabled = !running;
+    $("serverUrl").textContent = running
+      ? `${webUrl} (pid ${pid || "?"})`
+      : "not running";
+  };
+
+  const refreshServerStatus = async () => {
+    if (!window.go?.main?.App?.GetServerStatus) return;
+    try {
+      const s = await window.go.main.App.GetServerStatus();
+      state.server = {
+        running: !!s.running,
+        pid: s.pid || 0,
+        webUrl: s.webUrl || "",
+      };
+      refreshServerUI();
+    } catch (e) {
+      console.warn("GetServerStatus failed", e);
+    }
+  };
+
+  $("startServer").addEventListener("click", async () => {
+    const { webHost, webPort, quicHost, quicPort } = state.settings;
+    try {
+      const url = await window.go.main.App.StartServer(
+        webHost,
+        webPort,
+        quicHost,
+        quicPort,
+      );
+      state.server = { running: true, pid: 0, webUrl: url };
+      refreshServerUI();
+      await refreshServerStatus();
+    } catch (e) {
+      alert(`start failed: ${e}`);
+    }
+  });
+
+  $("stopServer").addEventListener("click", async () => {
+    try { await window.go.main.App.StopServer(); } catch (e) {
+      alert(`stop failed: ${e}`);
+    }
+    state.server = { running: false, pid: 0, webUrl: "" };
+    refreshServerUI();
+  });
+
+  // --- boot ------------------------------------------------------------------
+
+  fillSettingsForm(state.settings);
+  setChatUI();
+  refreshServerUI();
+  refreshServerStatus();
+
+  // restore code if backend says we're already connected (e.g. reload during dev)
+  if (window.go?.main?.App?.ChatStatus) {
+    window.go.main.App.ChatStatus().then((cs) => {
+      if (cs && cs.connected) {
+        state.chat = { connected: true, code: cs.code };
+        setChatUI();
+      }
+    }).catch(() => {});
+  }
+})();

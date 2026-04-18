@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AirSend</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="titlebar">
+    <div class="title-text">
+      <span class="brand-name">airsend</span>
+      <span class="hint">scroll chat · Esc clear · join to connect</span>
+    </div>
+    <div class="title-right">
+      <span id="statusText" class="muted">disconnected</span>
+      <button id="settingsBtn" class="icon-btn" title="settings" aria-label="settings">⚙</button>
+    </div>
+  </header>
+
+  <main class="chat-main">
+    <aside class="code-pane">
+      <div class="pane-title">code</div>
+      <div class="code-body">
+        <div class="code-label">share this code</div>
+        <div id="codeText" class="code-text">—</div>
+        <div class="code-actions">
+          <button id="copyCodeBtn" class="ghost small" disabled>copy</button>
+        </div>
+        <div class="code-divider"></div>
+        <div class="code-label">or join a room</div>
+        <input id="joinCode" type="text" placeholder="code" autocomplete="off" />
+        <div class="code-actions">
+          <button id="joinBtn" class="primary small">join</button>
+          <button id="leaveBtn" class="ghost small" disabled>leave</button>
+        </div>
+      </div>
+    </aside>
+
+    <section class="chat-pane">
+      <div class="pane-title">chat</div>
+      <div id="chatArea" class="chat-log"></div>
+    </section>
+  </main>
+
+  <footer class="input-bar">
+    <span class="prompt">&gt;</span>
+    <input id="chatInput" type="text" placeholder="type a message and press enter" disabled autocomplete="off" />
+  </footer>
+
+  <!-- settings modal -->
+  <div id="settingsModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h2>settings</h2>
+        <button id="settingsClose" class="icon-btn" aria-label="close">×</button>
+      </div>
+
+      <section class="settings-section">
+        <h3>relay</h3>
+        <p class="muted">
+          remote server used when joining a chat room. default connects to
+          <code>airsend.4rji.com:443</code>.
+        </p>
+        <div class="grid two">
+          <label>host<input id="relayHost" type="text" value="airsend.4rji.com" /></label>
+          <label>port<input id="relayPort" type="number" value="443" /></label>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h3>local server</h3>
+        <p class="muted">
+          optional — run your own <code>airsend -sw</code> relay locally. leave
+          untouched if you use the public one above.
+        </p>
+        <div class="grid">
+          <label>web host<input id="webHost" type="text" value="127.0.0.1" /></label>
+          <label>web port<input id="webPort" type="number" value="3888" /></label>
+          <label>quic host<input id="quicHost" type="text" value="127.0.0.1" /></label>
+          <label>quic port<input id="quicPort" type="number" value="8443" /></label>
+        </div>
+        <div class="actions">
+          <button id="startServer" class="primary small">start</button>
+          <button id="stopServer" class="ghost small" disabled>stop</button>
+          <span id="serverUrl" class="muted"></span>
+        </div>
+      </section>
+
+      <div class="actions modal-actions">
+        <button id="settingsReset" class="ghost">reset defaults</button>
+        <button id="settingsSave" class="primary">save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/wailsjs/runtime/runtime.js"></script>
+  <script src="/wailsjs/go/main/App.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
