@@ -18,6 +18,10 @@ export function ChatStatus() {
   return window['go']['main']['App']['ChatStatus']();
 }
 
+export function CheckRelayHealth(arg1, arg2) {
+  return window['go']['main']['App']['CheckRelayHealth'](arg1, arg2);
+}
+
 export function FileRecv(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['FileRecv'](arg1, arg2, arg3, arg4);
 }

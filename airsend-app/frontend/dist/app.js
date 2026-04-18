@@ -411,12 +411,42 @@
     refreshServerUI();
   });
 
+  // --- relay health ----------------------------------------------------------
+
+  const relayDot   = $("relayHealth");
+  const relayLabel = $("relayLabel");
+
+  const checkRelayHealth = async () => {
+    if (!window.go?.main?.App?.CheckRelayHealth) return;
+    const { relayHost, relayPort } = state.settings;
+    relayDot.className  = "relay-dot checking";
+    relayLabel.textContent = "checking…";
+    relayLabel.style.color = "";
+    try {
+      const ok = await window.go.main.App.CheckRelayHealth(relayHost, relayPort);
+      relayDot.className     = `relay-dot ${ok ? "online" : "offline"}`;
+      relayLabel.textContent = ok ? "online" : "offline";
+      relayLabel.style.color = ok ? "var(--lime)" : "var(--danger)";
+      relayDot.title = `${relayHost}:${relayPort}`;
+    } catch {
+      relayDot.className     = "relay-dot offline";
+      relayLabel.textContent = "offline";
+      relayLabel.style.color = "var(--danger)";
+    }
+  };
+
+  // re-check when settings change (host/port may have changed)
+  const origSave = $("settingsSave").onclick;
+  $("settingsSave").addEventListener("click", () => setTimeout(checkRelayHealth, 200));
+
   // --- boot ------------------------------------------------------------------
 
   fillSettingsForm(state.settings);
   setChatUI();
   refreshServerUI();
   refreshServerStatus();
+  checkRelayHealth();
+  setInterval(checkRelayHealth, 30_000);
 
   // restore code if backend says we're already connected (e.g. reload during dev)
   if (window.go?.main?.App?.ChatStatus) {

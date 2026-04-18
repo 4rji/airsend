@@ -995,6 +995,12 @@ func startWebServer(addr string) {
 		io.WriteString(w, indexHTML)
 	})
 
+	mux.HandleFunc("/icon.png", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Write(iconoPNG)
+	})
+
 	// Endpoint de subida: acepta multipart/form-data con campo "file" y opcional "code".
 	mux.HandleFunc("/api/upload", func(w http.ResponseWriter, r *http.Request) {
 		clientIP, allowed := applyRateLimit(w, r, "upload", uploadRateRule)
@@ -1186,6 +1192,9 @@ func startWebServer(addr string) {
 
 //go:embed web/index.html
 var indexHTML string
+
+//go:embed web/icono.png
+var iconoPNG []byte
 
 
 func sendFile(filePath, serverHost string, serverPort int, codeOverride string) {

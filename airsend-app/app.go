@@ -320,6 +320,25 @@ func (a *App) ChatLeave() error {
 	return nil
 }
 
+// --- relay health check ----------------------------------------------------
+
+// CheckRelayHealth tries a QUIC dial to the relay and returns true if reachable.
+func (a *App) CheckRelayHealth(host string, port int) bool {
+	if host == "" || port <= 0 {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	addr := fmt.Sprintf("%s:%d", host, port)
+	qconn, stream, err := dialRelay(ctx, addr)
+	if err != nil {
+		return false
+	}
+	_ = stream.Close()
+	_ = qconn.CloseWithError(0, "health-check")
+	return true
+}
+
 // --- file transfer over QUIC (mirrors -f / -r modes) -----------------------
 
 // PickFile opens the native file picker and returns the selected absolute path.

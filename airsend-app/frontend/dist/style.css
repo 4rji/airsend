@@ -64,6 +64,50 @@ body {
 
 .title-right { display: flex; align-items: center; gap: 10px; }
 
+.relay-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.relay-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  transition: color 0.4s ease;
+}
+
+.title-sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(168, 85, 247, 0.35);
+  flex-shrink: 0;
+}
+
+.relay-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: default;
+  transition: background 0.4s ease, box-shadow 0.4s ease;
+}
+.relay-dot.checking {
+  background: #6b6494;
+  animation: relay-pulse 1.4s ease-in-out infinite;
+}
+.relay-dot.online {
+  background: #a3e635;
+  box-shadow: 0 0 6px rgba(163, 230, 53, 0.7);
+}
+.relay-dot.offline {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+}
+@keyframes relay-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
 .icon-btn {
   background: transparent;
   border: 1px solid rgba(168, 85, 247, 0.45);

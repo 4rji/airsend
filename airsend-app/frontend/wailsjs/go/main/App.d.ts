@@ -10,6 +10,8 @@ export function ChatSend(arg1:string):Promise<void>;
 
 export function ChatStatus():Promise<main.ChatStatus>;
 
+export function CheckRelayHealth(arg1:string,arg2:number):Promise<boolean>;
+
 export function FileRecv(arg1:string,arg2:string,arg3:string,arg4:number):Promise<main.FileRecvResult>;
 
 export function FileSend(arg1:string,arg2:string,arg3:string,arg4:number):Promise<main.FileSendResult>;

@@ -182,13 +182,13 @@ section + section { border-top: 1px solid var(--line); }
   font-size: 15px;
 }
 .brand-logo {
-  width: 28px; height: 28px;
-  display: grid; place-items: center;
+  width: 32px; height: 32px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--purple), var(--fuchsia));
+  overflow: hidden;
   box-shadow: var(--glow-p);
+  flex-shrink: 0;
 }
-.brand-logo svg { width: 16px; height: 16px; }
+.brand-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 .nav-links {
   display: flex;
@@ -299,6 +299,17 @@ section + section { border-top: 1px solid var(--line); }
   background: rgba(34, 211, 238, 0.14);
   border-color: var(--cyan);
   box-shadow: var(--glow-c);
+}
+
+.btn-app {
+  background: linear-gradient(135deg, var(--lime), #84cc16);
+  color: #05020f;
+  box-shadow: 0 0 24px rgba(163, 230, 53, 0.4);
+}
+.btn-app:hover {
+  background: #a3e635;
+  box-shadow: 0 0 32px rgba(163, 230, 53, 0.6);
+  transform: translateY(-1px);
 }
 
 /* Hero code card */
@@ -690,9 +701,7 @@ footer a:hover { color: var(--fuchsia); }
   <div class="nav-inner">
     <a class="brand" href="#top" aria-label="AirSend home">
       <span class="brand-logo" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M2 12l9-9 9 9"/><path d="M6 12v9"/><path d="M18 12v9"/>
-        </svg>
+        <img src="icono.png" alt="">
       </span>
       AirSend
     </a>
@@ -701,9 +710,9 @@ footer a:hover { color: var(--fuchsia); }
       <li><a href="#how">How it works</a></li>
       <li><a href="#docs">Docs</a></li>
     </ul>
-    <a class="nav-cta" href="#how">
-      <span>get started</span>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+    <a class="nav-cta" href="http://app.airsend.us/" target="_blank" rel="noopener noreferrer">
+      <span>Go to App</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
     </a>
   </div>
 </nav>
@@ -722,6 +731,10 @@ footer a:hover { color: var(--fuchsia); }
     </p>
 
     <div class="hero-cta-row">
+      <a class="btn btn-app" href="http://app.airsend.us/" target="_blank" rel="noopener noreferrer">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        Go to App
+      </a>
       <a class="btn btn-primary" href="#how">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>
         Watch the demo
@@ -967,7 +980,7 @@ $ <span class="tk-cmd">airsend</span> <span class="tk-flag">-r</span> <span clas
   <div class="container">
     <div class="brand">
       <span class="brand-logo" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12l9-9 9 9"/><path d="M6 12v9"/><path d="M18 12v9"/></svg>
+        <img src="icono.png" alt="">
       </span>
       AirSend
     </div>
