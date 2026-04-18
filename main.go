@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	DEFAULT_SERVER_HOST = "airsend.4rji.com"
+	DEFAULT_SERVER_HOST = "app.airsend.us"
 	DEFAULT_SERVER_PORT = 443
 	DEFAULT_LOG_DIR     = "/opt/4rji/airsend"
 	DEFAULT_FILES_DIR   = "/opt/4rji/airsend"
@@ -1771,7 +1771,7 @@ func main() {
 		}
 
 		var filePath string
-		targetHost := DEFAULT_SERVER_HOST // Default to mic2.4rji.com
+		targetHost := DEFAULT_SERVER_HOST // Default to app.airsend.us
 		targetPort := DEFAULT_SERVER_PORT
 
 		// Determine if first argument is a file or host:port

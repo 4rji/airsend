@@ -3,7 +3,7 @@
 Native desktop client for AirSend. Built with [Wails v2](https://wails.io).
 
 The app is a **native chat client** for the AirSend relay. By default it
-connects directly to the public relay at `airsend.4rji.com:443` over QUIC (same
+connects directly to the public relay at `app.airsend.us:443` over QUIC (same
 protocol as `airsend -m` / `-mr`), so chat rooms interoperate with the CLI and
 with any browser hitting a `-sw` instance on the same network.
 
