@@ -67,7 +67,7 @@ Both transports share the same in-memory room/file state, so a CLI client and a 
 
 | Variable | Default |
 |----------|---------|
-| `DEFAULT_SERVER_HOST` | `airsend.4rji.com` |
+| `DEFAULT_SERVER_HOST` | `app.airsend.us` |
 | `DEFAULT_SERVER_PORT` | `443` |
 | `FILES_DIR` | `/opt/4rji/airsend` (fallbacks: `./airsend-files`, `$TMPDIR`) |
 | QUIC keepalive | 2 minutes |

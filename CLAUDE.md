@@ -83,7 +83,7 @@ The entire web UI is a single Go string constant `indexHTML` in `main.go` (serve
 
 ## Defaults & Network Notes
 
-- `DEFAULT_SERVER_HOST = "airsend.4rji.com"`, `DEFAULT_SERVER_PORT = 443` — baked into the binary as the fallback relay target for client modes.
+- `DEFAULT_SERVER_HOST = "app.airsend.us"`, `DEFAULT_SERVER_PORT = 443` — baked into the binary as the fallback relay target for client modes.
 - QUIC uses `KeepAlivePeriod: 2m`, `MaxIdleTimeout: 10m`. Lowering these will cause premature disconnects for large transfers or idle chats.
 - Web UI requires **TCP** on the web port and **UDP** on the QUIC port — firewall must open both. If QUIC port 443 bind fails the process exits; use a high port (e.g. 8443) to keep both servers up.
 
