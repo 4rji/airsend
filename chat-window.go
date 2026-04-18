@@ -13,8 +13,11 @@ import (
 // RunChatUI launches a text-based chat interface over the given connection,
 // displaying the pairing code in the left pane.
 func RunChatUI(conn net.Conn, code string) {
-	// Set background color to dracula theme (#282a36)
-	bgColor := tcell.NewRGBColor(40, 42, 54)
+	// Cyberpunk palette — matches cyberpunk-website/index.html
+	// bg #05020f, purple #a855f7, fuchsia #d946ef, cyan #22d3ee
+	bgColor := tcell.NewRGBColor(5, 2, 15)
+	borderColor := tcell.NewRGBColor(168, 85, 247)  // --purple
+	accentColor := tcell.NewRGBColor(34, 211, 238)  // --cyan
 	app := tview.NewApplication()
 
 	// Create the main layout
@@ -23,10 +26,10 @@ func RunChatUI(conn net.Conn, code string) {
 
 	// Create the title
 	title := tview.NewTextView().
+		SetDynamicColors(true).
 		SetTextAlign(tview.AlignCenter).
-		SetText("airsend -by 4rji")
+		SetText("[#d946ef::b]airsend[-:-:-]  [#6b6494]PgUp/PgDn scroll · End jump · Ctrl+C quit[-]")
 	title.SetBackgroundColor(bgColor)
-	title.SetTextColor(tcell.ColorAqua)
 
 	// Create the chat area
 	chatArea := tview.NewTextView().
@@ -34,25 +37,30 @@ func RunChatUI(conn net.Conn, code string) {
 	chatArea.SetScrollable(true).SetWrap(true)
 	chatArea.SetBackgroundColor(bgColor)
 	chatArea.SetBorder(true)
-	chatArea.SetTitle("Chat")
-	chatArea.SetTitleColor(tcell.ColorAqua)
+	chatArea.SetTitle(" chat ")
+	chatArea.SetTitleColor(accentColor)
+	chatArea.SetBorderColor(borderColor)
 
 	// Create the code display pane
 	codeView := tview.NewTextView().
+		SetDynamicColors(true).
 		SetTextAlign(tview.AlignCenter).
-		SetText(code)
+		SetText("\n[#6b6494]share this code[-]\n\n[#d946ef::b]" + code + "[-:-:-]")
 	codeView.SetBackgroundColor(bgColor)
 	codeView.SetBorder(true)
-	codeView.SetTitle("Code")
-	codeView.SetTitleColor(tcell.ColorAqua)
+	codeView.SetTitle(" code ")
+	codeView.SetTitleColor(accentColor)
+	codeView.SetBorderColor(borderColor)
 
 	// Create the input field
 	input := tview.NewInputField().
 		SetLabel("> ").
+		SetLabelColor(accentColor).
 		SetFieldWidth(0)
 	input.SetBackgroundColor(bgColor)
 	input.SetFieldBackgroundColor(bgColor)
 	input.SetBorder(true)
+	input.SetBorderColor(borderColor)
 
 	// Prepare writer to send messages to peer
 	writer := bufio.NewWriter(conn)
@@ -70,7 +78,7 @@ func RunChatUI(conn net.Conn, code string) {
 					writer.Flush()
 				}
 				// Display locally
-				chatArea.Write([]byte("You: " + text + "\n"))
+				chatArea.Write([]byte("[#22d3ee::b]you[-:-:-] " + text + "\n"))
 				// Prioritize new messages: re-enable autoscroll
 				autoScroll = true
 				chatArea.ScrollToEnd()
@@ -126,7 +134,7 @@ func RunChatUI(conn net.Conn, code string) {
 				}
 				return
 			}
-			chatArea.Write([]byte("Peer: " + line))
+			chatArea.Write([]byte("[#d946ef::b]peer[-:-:-] " + line))
 			autoScroll = true // prioridad a mensajes entrantes
 			app.QueueUpdateDraw(func() {
 				chatArea.ScrollToEnd()
@@ -145,7 +153,7 @@ func RunChatUI(conn net.Conn, code string) {
 		AddItem(input, 3, 1, true)
 
 	// Set up colors and borders
-	flex.SetBorderColor(tcell.ColorAqua)
+	flex.SetBorderColor(borderColor)
 	flex.SetBorder(true)
 
 	// Run the application (blocks until exit).
