@@ -22,7 +22,7 @@ html, body {
   color: var(--text);
   font-family: "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular,
     Menlo, monospace;
-  font-size: 14px;
+  font-size: 15px;
   overflow: hidden;
 }
 
@@ -35,7 +35,7 @@ body {
   flex-direction: column;
   height: 100vh;
   padding: 10px 12px;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* --- title bar --- */
@@ -51,7 +51,14 @@ body {
   min-height: 34px;
 }
 
-.title-text { display: flex; align-items: baseline; gap: 12px; flex: 1; min-width: 0; }
+.title-text { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+
+.brand-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
 
 .brand-name {
   color: var(--fuchsia);
@@ -60,7 +67,7 @@ body {
   text-shadow: 0 0 10px rgba(217, 70, 239, 0.35);
 }
 
-.hint { color: var(--dim); font-size: 11px; letter-spacing: 1px; }
+.hint { color: var(--dim); font-size: 12px; letter-spacing: 1px; }
 
 .title-right { display: flex; align-items: center; gap: 10px; }
 
@@ -71,7 +78,7 @@ body {
 }
 
 .relay-label {
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.04em;
   transition: color 0.4s ease;
 }
@@ -116,7 +123,7 @@ body {
   height: 28px;
   padding: 0;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -136,15 +143,16 @@ body {
   display: flex;
   gap: 6px;
   padding: 0;
+  margin-bottom: 10px;
 }
 
 .tab-btn {
   background: rgba(168, 85, 247, 0.08);
   border: 1px solid rgba(168, 85, 247, 0.35);
   color: var(--muted);
-  padding: 6px 12px;
+  padding: 7px 13px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 12px;
   text-transform: lowercase;
   letter-spacing: 1px;
   cursor: pointer;
@@ -171,6 +179,7 @@ body {
 
 .file-view {
   overflow-y: auto;
+  padding-top: 12px;
 }
 
 .file-panel {
@@ -197,7 +206,7 @@ textarea {
   color: var(--text);
   border-radius: 6px;
   padding: 9px 11px;
-  font-size: 13px;
+  font-size: 14px;
   font-family: inherit;
   outline: none;
   resize: vertical;
@@ -222,7 +231,7 @@ textarea:focus {
   overflow-y: auto;
   color: var(--muted);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -257,13 +266,16 @@ textarea:focus {
 
 .pane-title {
   position: absolute;
-  top: -9px;
+  top: -10px;
   left: 10px;
-  padding: 0 6px;
+  padding: 3px 8px;
   background: var(--bg);
   color: var(--cyan);
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1;
   letter-spacing: 1px;
+  border-radius: 4px;
+  z-index: 1;
 }
 
 /* --- code pane --- */
@@ -272,7 +284,7 @@ textarea:focus {
 
 .code-label {
   color: var(--dim);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 1px;
   margin-top: 4px;
 }
@@ -280,7 +292,7 @@ textarea:focus {
 .code-text {
   color: var(--fuchsia);
   font-weight: 700;
-  font-size: 20px;
+  font-size: 21px;
   letter-spacing: 1px;
   text-align: center;
   padding: 8px 4px;
@@ -301,7 +313,7 @@ textarea:focus {
 .chat-log {
   flex: 1;
   overflow-y: auto;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.55;
   padding-right: 4px;
 }
@@ -329,10 +341,36 @@ textarea:focus {
   min-height: 44px;
 }
 
-.prompt {
+.prompt-btn {
+  background: transparent;
+  border: 1px solid rgba(34, 211, 238, 0.5);
   color: var(--cyan);
   font-weight: 700;
-  font-size: 16px;
+  font-size: 17px;
+  padding: 0 8px;
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+.prompt-btn:hover:not(:disabled) {
+  border-color: var(--cyan);
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.3);
+}
+
+.prompt-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.prompt-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .input-bar input {
@@ -342,7 +380,7 @@ textarea:focus {
   outline: none;
   color: var(--text);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 15px;
   padding: 10px 0;
 }
 
@@ -357,7 +395,7 @@ input[type="number"] {
   color: var(--text);
   border-radius: 6px;
   padding: 7px 9px;
-  font-size: 13px;
+  font-size: 14px;
   font-family: inherit;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -371,7 +409,7 @@ input:focus {
 
 button {
   font-family: inherit;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   padding: 8px 14px;
   border-radius: 6px;
@@ -382,7 +420,7 @@ button {
   transition: transform 0.1s, box-shadow 0.15s, opacity 0.15s;
 }
 
-button.small { padding: 5px 10px; font-size: 12px; }
+button.small { padding: 5px 10px; font-size: 13px; }
 
 button.primary {
   background: linear-gradient(135deg, var(--purple), var(--fuchsia));
@@ -405,7 +443,7 @@ button.ghost:hover:not(:disabled) { border-color: var(--cyan); }
 
 button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.muted { color: var(--muted); font-size: 12px; }
+.muted { color: var(--muted); font-size: 13px; }
 
 /* --- modal --- */
 
@@ -443,7 +481,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .modal-header h2 {
   margin: 0;
   color: var(--cyan);
-  font-size: 13px;
+  font-size: 14px;
   letter-spacing: 2px;
   text-transform: lowercase;
 }
@@ -458,7 +496,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .settings-section h3 {
   color: var(--fuchsia);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 2px;
   text-transform: lowercase;
   margin: 0 0 6px;
@@ -469,7 +507,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   background: rgba(34, 211, 238, 0.08);
   padding: 1px 5px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .grid {
@@ -485,7 +523,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 1px;

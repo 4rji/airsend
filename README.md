@@ -1,3 +1,26 @@
+## April 19, 2026 Update
+
+### New Features
+- **Desktop App (Wails)** — Native macOS application with full file transfer, text paste, and multi-user chat support
+- **Website Redesign** — Modern, professional UI with improved usability and dark cyberpunk theme
+- **Keyboard Shortcuts** — Fast navigation and control:
+  - `Ctrl+D` — Disconnect chat and clear conversation
+  - `Cmd+1` — Chat tab
+  - `Cmd+2` — Send file tab
+  - `Cmd+3` — Send text tab
+  - `Cmd+4` — Receive tab
+  - `Cmd+,` — Open settings
+- **Send Button** — Click the `>` prompt to send messages (or press Enter)
+- **Domain** — New domain: `airsend.us`
+
+#### Desktop App
+<img src="app.webp" width="600" alt="AirSend Desktop App">
+
+#### Website Redesign
+<img src="web2.webp" width="600" alt="AirSend Website">
+
+---
+
 ## February 12, 2026 Update
 
 ### New Features

@@ -4,11 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AirSend</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="titlebar">
     <div class="title-text">
+      <img src="icono.png" alt="airsend" class="brand-icon" />
       <span class="brand-name">airsend</span>
       <span class="hint">scroll chat · Esc clear · join to connect</span>
     </div>
@@ -57,7 +59,7 @@
   </main>
 
   <footer id="inputBar" class="input-bar">
-    <span class="prompt">&gt;</span>
+    <button id="sendBtn" class="prompt-btn" title="send" aria-label="send">&gt;</button>
     <input id="chatInput" type="text" placeholder="type a message and press enter" disabled autocomplete="off" />
   </footer>
 

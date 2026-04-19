@@ -65,6 +65,7 @@
     $("joinBtn").disabled = connected;
     $("leaveBtn").disabled = !connected;
     $("chatInput").disabled = !connected;
+    $("sendBtn").disabled = !connected;
     $("chatInput").placeholder = connected
       ? "type a message and press enter"
       : "join a room to start chatting";
@@ -130,6 +131,11 @@
 
   $("chatInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendChat();
+  });
+
+  $("sendBtn").addEventListener("click", () => {
+    sendChat();
+    $("chatInput").focus();
   });
 
   // --- wails events ---------------------------------------------------------
@@ -457,4 +463,42 @@
       }
     }).catch(() => {});
   }
+
+  // --- keyboard shortcuts ---------------------------------------------------
+
+  document.addEventListener("keydown", (e) => {
+    // Ctrl+D: disconnect and clear chat
+    if (e.ctrlKey && e.key === "d") {
+      e.preventDefault();
+      if (state.chat.connected) {
+        disconnect();
+        clearChat();
+      }
+    }
+    // Cmd+1: go to chat tab
+    if (e.metaKey && e.key === "1") {
+      e.preventDefault();
+      activateTab("chat");
+    }
+    // Cmd+2: go to send file tab
+    if (e.metaKey && e.key === "2") {
+      e.preventDefault();
+      activateTab("send");
+    }
+    // Cmd+3: go to send text tab
+    if (e.metaKey && e.key === "3") {
+      e.preventDefault();
+      activateTab("paste");
+    }
+    // Cmd+4: go to receive tab
+    if (e.metaKey && e.key === "4") {
+      e.preventDefault();
+      activateTab("recv");
+    }
+    // Cmd+, (Command + comma): open settings
+    if (e.metaKey && e.key === ",") {
+      e.preventDefault();
+      $("settingsModal").hidden = false;
+    }
+  });
 })();
