@@ -40,12 +40,63 @@
 - Web download forces save-as (no inline preview).
 - QUIC keepalive + 10 min idle timeout to avoid premature disconnects.
 
-## Desktop App (Wails)
+## Build from Source
+
+### CLI binary
+
+Requirements:
+- Go 1.20+
+
+Build the main `airsend` binary from the repository root:
+
+```bash
+make build
+```
+
+This produces:
+
+```bash
+./airsend
+```
+
+Cross-platform builds:
+
+```bash
+make build-all
+```
+
+### Desktop App (Wails)
+
+Requirements:
+- Go 1.23+
+- Wails CLI
 
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 export PATH=$PATH:$(go env GOPATH)/bin
+cd airsend-app
+go mod tidy
 wails build -platform darwin/universal
+```
+
+Other targets:
+
+```bash
+wails build -platform windows/amd64
+wails build -platform linux/amd64
+```
+
+Artifacts are written to:
+
+```bash
+airsend-app/build/bin/
+```
+
+If you want to run the desktop app in development mode instead of building it:
+
+```bash
+cd airsend-app
+wails dev
 ```
 
 ## Run (web + QUIC)
