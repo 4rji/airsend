@@ -222,6 +222,15 @@ func generateCode(length int) string {
 	return fmt.Sprintf("%s%d%d", word, numbers[0], numbers[1])
 }
 
+// normalizeCode canonicalizes a transfer/chat code so lookups are
+// case- and whitespace-insensitive. Codes are stored and matched in lowercase,
+// so one typed as "Wave21" (e.g. by a Mac/phone autocorrect capitalizing the
+// first letter) still matches one created as "wave21". Applied at every server
+// ingestion point, so it holds across CLI, web, and the desktop app.
+func normalizeCode(code string) string {
+	return strings.ToLower(strings.TrimSpace(code))
+}
+
 func resolveStorageDir(envName, preferredDir, fallbackName string) string {
 	if configured := strings.TrimSpace(os.Getenv(envName)); configured != "" {
 		return configured
@@ -646,6 +655,7 @@ func handleFileSend(commandLine string, reader *bufio.Reader, conn net.Conn) {
 		fmt.Printf("Error reading code: %v\n", err)
 		return
 	}
+	code = normalizeCode(code)
 
 	// Lee el nombre del archivo
 	filename, err := readLine(reader)
@@ -794,6 +804,7 @@ func clampDownloadCount(n int) int {
 // the file info, the number of downloads left after this claim, and whether the
 // code existed. Safe for concurrent callers (QUIC FILE RECV and HTTP download).
 func claimPendingFile(code string) (FileInfo, int, bool) {
+	code = normalizeCode(code)
 	pendingFilesLock.Lock()
 	defer pendingFilesLock.Unlock()
 	info, ok := pendingFiles[code]
@@ -848,7 +859,7 @@ func handleFileRecv(reader *bufio.Reader, conn net.Conn) {
 
 // handleChatOrRelay returns a channel that closes when the chat session ends (or immediately on error).
 func handleChatOrRelay(conn net.Conn, firstLine string) chan struct{} {
-	code := strings.TrimSpace(firstLine)
+	code := normalizeCode(firstLine)
 	if code == "" {
 		fmt.Println("Empty code received, closing connection")
 		conn.Close()
@@ -1024,7 +1035,7 @@ func normalizeTextToLF(text string) string {
 }
 
 func savePendingFile(code, filename string, src io.Reader) (string, FileInfo, error) {
-	normalizedCode := strings.TrimSpace(code)
+	normalizedCode := normalizeCode(code)
 	if normalizedCode == "" {
 		normalizedCode = generateCode(6)
 	}
