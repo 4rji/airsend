@@ -282,6 +282,14 @@ button {
   width: auto;
   margin: 0;
   padding: 4px 8px;
+  min-width: 56px;
+  /* Force the native dropdown popup to a dark theme (Windows WebView2 /
+     Chromium render light-on-light otherwise). */
+  color-scheme: dark;
+}
+.downloads-select option {
+  background: #1e1b2e;
+  color: #e6e6e6;
 }
 
 .upload-meta { line-height: 1.3; }

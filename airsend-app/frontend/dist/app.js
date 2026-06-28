@@ -97,6 +97,17 @@
     setChatUI();
   };
 
+  // Fill the downloads dropdowns with 1..25 (default 1).
+  document.querySelectorAll(".downloads-select").forEach((sel) => {
+    for (let i = 1; i <= 25; i++) {
+      const o = document.createElement("option");
+      o.value = String(i);
+      o.textContent = String(i);
+      sel.appendChild(o);
+    }
+    sel.value = "1";
+  });
+
   $("joinBtn").addEventListener("click", connect);
   $("leaveBtn").addEventListener("click", disconnect);
   $("joinCode").addEventListener("keydown", (e) => {
