@@ -306,6 +306,10 @@
     }
   });
 
+  $("downloadCode").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !$("downloadBtn").disabled) $("downloadBtn").click();
+  });
+
   // --- keyboard shortcuts ---------------------------------------------------
 
   document.addEventListener("keydown", (e) => {

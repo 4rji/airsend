@@ -1,3 +1,13 @@
+## June 27, 2026 Update — v3.0
+
+Full notes: [release3.0.md](release3.0.md).
+
+### New Features
+- **Reusable download links** — `airsend -f -n<N> <file>` keeps a sent file available for up to **N** downloads (range `1`–`25`, default `1`) instead of deleting it after the first pickup. The remaining-download counter is shared across the CLI (`-r`) and the web download endpoint.
+- **Case-insensitive share codes** — codes now match regardless of case or surrounding whitespace, so `WAVE21` and `wave21` resolve to the same room/file. Fixes mobile/macOS autocorrect capitalizing the first letter of a typed code.
+
+---
+
 ## April 19, 2026 Update
 
 ### New Features
@@ -121,6 +131,9 @@ go run . -sw 0.0.0.0 3888 0.0.0.0 8443   # web on TCP 3888, QUIC on UDP 8443
 - Send file via server mic2:  
   `airsend -f file`  
   Example: `airsend -f file.pdf`
+- Send file, allow multiple downloads:  
+  `airsend -f -n<N> file`  (N = 1–25, default 1)  
+  Example: `airsend -f -n5 file.pdf` — downloadable 5 times before it's removed
 - Receive file:  
   `airsend -r <code> `
 - Chat (client):  
@@ -248,10 +261,18 @@ sudo airsend -s <host> <port>
 airsend -f <host> <port> <file1> <file2>
 ```
 
+**Send a file that can be downloaded multiple times** (`-n<N>`, range 1–25, default 1):
+```bash
+airsend -f -n<N> <file>
+# Example: airsend -f -n5 report.pdf   # available for 5 downloads
+```
+The download count is shared between the CLI (`-r`) and the web download endpoint, and the file is removed once the slots run out.
+
 **Receive Files:**
 ```bash
 airsend -r <host> <port> <code>
 ```
+Codes are case-insensitive, so `WAVE21` and `wave21` are equivalent.
 
 
 ### Direct Transfer Mode
