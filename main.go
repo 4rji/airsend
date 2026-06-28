@@ -36,6 +36,7 @@ const (
 	DEFAULT_LOG_DIR     = "/opt/4rji/airsend"
 	DEFAULT_FILES_DIR   = "/opt/4rji/airsend"
 	CONNECTIONS_LOG     = "connections.log"
+	MAX_DOWNLOAD_COUNT  = 25
 )
 
 type PendingChat struct {
@@ -50,6 +51,9 @@ type FileInfo struct {
 	filename string
 	filesize int64
 	fullPath string
+	// downloads is the number of remaining pickups before the entry is removed.
+	// Defaults to 1 (one-shot). Set higher via the -f -n<N> flag (max MAX_DOWNLOAD_COUNT).
+	downloads int
 }
 
 type rateLimitRule struct {
@@ -650,19 +654,35 @@ func handleFileSend(commandLine string, reader *bufio.Reader, conn net.Conn) {
 		return
 	}
 
-	// Lee el tamaño del archivo
+	// Lee el tamaño del archivo. La línea puede traer un segundo campo opcional
+	// con el número de descargas permitidas: "<size> <count>" (flag -f -n<N>).
 	sizeStr, err := readLine(reader)
 	if err != nil {
 		fmt.Printf("Error reading size: %v\n", err)
 		return
 	}
 
-	filesize, err := strconv.ParseInt(strings.TrimSpace(sizeStr), 10, 64)
+	sizeFields := strings.Fields(sizeStr)
+	if len(sizeFields) == 0 {
+		fmt.Printf("Invalid file size '%s'\n", sizeStr)
+		return
+	}
+	filesize, err := strconv.ParseInt(sizeFields[0], 10, 64)
 	if err != nil {
 		fmt.Printf("Invalid file size '%s': %v\n", sizeStr, err)
 		return
 	}
-	fmt.Printf("File size: %s\n", humanizeBytes(filesize))
+	downloads := 1
+	if len(sizeFields) >= 2 {
+		if d, derr := strconv.Atoi(sizeFields[1]); derr == nil {
+			downloads = clampDownloadCount(d)
+		}
+	}
+	if downloads > 1 {
+		fmt.Printf("File size: %s (available for %d downloads)\n", humanizeBytes(filesize), downloads)
+	} else {
+		fmt.Printf("File size: %s\n", humanizeBytes(filesize))
+	}
 
 	// Crea el archivo de salida
 	serverFilename := fmt.Sprintf("%s_%s", code, filename)
@@ -689,7 +709,7 @@ func handleFileSend(commandLine string, reader *bufio.Reader, conn net.Conn) {
 
 	// Guarda la info del archivo para posteriores recepciones
 	pendingFilesLock.Lock()
-	pendingFiles[code] = FileInfo{filename: filename, filesize: filesize, fullPath: fullPath}
+	pendingFiles[code] = FileInfo{filename: filename, filesize: filesize, fullPath: fullPath, downloads: downloads}
 	pendingFilesLock.Unlock()
 
 	// Envía confirmación
@@ -723,6 +743,74 @@ func humanizeBytes(bytes int64) string {
 	return fmt.Sprintf("%.2f%cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
+// extractDownloadCount scans -f args for a download-count flag and returns the
+// args with the flag removed plus the parsed count. Accepts the attached form
+// "-n10" and the separated form "-n 10". The count is clamped to
+// [1, MAX_DOWNLOAD_COUNT]; a missing flag yields the default of 1.
+func extractDownloadCount(args []string) ([]string, int) {
+	count := 1
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-n":
+			// Separated form: the value is the next token.
+			if i+1 < len(args) {
+				if v, err := strconv.Atoi(args[i+1]); err == nil {
+					count = v
+					i++ // consume the value token
+					continue
+				}
+			}
+			// "-n" without a valid number: drop the flag and keep going.
+			continue
+		case strings.HasPrefix(a, "-n") && len(a) > 2:
+			if v, err := strconv.Atoi(a[2:]); err == nil {
+				count = v
+				continue
+			}
+			// Not "-n<number>" (e.g. an unrelated token): leave it untouched.
+			out = append(out, a)
+		default:
+			out = append(out, a)
+		}
+	}
+	return out, clampDownloadCount(count)
+}
+
+// clampDownloadCount keeps a requested download count within [1, MAX_DOWNLOAD_COUNT].
+func clampDownloadCount(n int) int {
+	if n < 1 {
+		return 1
+	}
+	if n > MAX_DOWNLOAD_COUNT {
+		return MAX_DOWNLOAD_COUNT
+	}
+	return n
+}
+
+// claimPendingFile looks up a stored file by code and consumes one download
+// slot. The entry is removed once its remaining downloads reach zero. It returns
+// the file info, the number of downloads left after this claim, and whether the
+// code existed. Safe for concurrent callers (QUIC FILE RECV and HTTP download).
+func claimPendingFile(code string) (FileInfo, int, bool) {
+	pendingFilesLock.Lock()
+	defer pendingFilesLock.Unlock()
+	info, ok := pendingFiles[code]
+	if !ok {
+		return FileInfo{}, 0, false
+	}
+	remaining := info.downloads - 1
+	if remaining <= 0 {
+		delete(pendingFiles, code)
+		remaining = 0
+	} else {
+		info.downloads = remaining
+		pendingFiles[code] = info
+	}
+	return info, remaining, true
+}
+
 func handleFileRecv(reader *bufio.Reader, conn net.Conn) {
 	defer conn.Close()
 	code, err := readLine(reader)
@@ -730,15 +818,13 @@ func handleFileRecv(reader *bufio.Reader, conn net.Conn) {
 		return
 	}
 
-	pendingFilesLock.Lock()
-	fileInfo, ok := pendingFiles[code]
-	if ok {
-		delete(pendingFiles, code)
-	}
-	pendingFilesLock.Unlock()
+	fileInfo, remaining, ok := claimPendingFile(code)
 	if !ok {
 		conn.Write([]byte("ERR\n"))
 		return
+	}
+	if remaining > 0 {
+		fmt.Printf("File '%s' (code %s) sent, %d download(s) remaining\n", fileInfo.filename, code, remaining)
 	}
 
 	conn.Write([]byte(fileInfo.filename + "\n"))
@@ -959,9 +1045,10 @@ func savePendingFile(code, filename string, src io.Reader) (string, FileInfo, er
 	}
 
 	info := FileInfo{
-		filename: safeFilename,
-		filesize: n,
-		fullPath: fullPath,
+		filename:  safeFilename,
+		filesize:  n,
+		fullPath:  fullPath,
+		downloads: 1,
 	}
 
 	pendingFilesLock.Lock()
@@ -1123,12 +1210,8 @@ func startWebServer(addr string) {
 			return
 		}
 
-		pendingFilesLock.Lock()
-		fileInfo, ok := pendingFiles[code]
-		if ok {
-			delete(pendingFiles, code) // consumo único, igual que el flujo CLI
-		}
-		pendingFilesLock.Unlock()
+		// Consume one download slot (multi-download via -f -n<N>; default one-shot).
+		fileInfo, remaining, ok := claimPendingFile(code)
 
 		if !ok {
 			if missAllowed, _ := rateLimiter.allow("download_miss", clientIP, downloadMissRateRule); !missAllowed {
@@ -1138,7 +1221,7 @@ func startWebServer(addr string) {
 			http.Error(w, "code not found", http.StatusNotFound)
 			return
 		}
-		logConnectionEvent("http", clientIP, fmt.Sprintf("download_hit code=%s file=%s bytes=%d raw_remote=%s", code, fileInfo.filename, fileInfo.filesize, rawRemote))
+		logConnectionEvent("http", clientIP, fmt.Sprintf("download_hit code=%s file=%s bytes=%d remaining=%d raw_remote=%s", code, fileInfo.filename, fileInfo.filesize, remaining, rawRemote))
 
 		// Force download instead of inline display
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileInfo.filename))
@@ -1197,13 +1280,15 @@ var indexHTML string
 var iconoPNG []byte
 
 
-func sendFile(filePath, serverHost string, serverPort int, codeOverride string) {
+func sendFile(filePath, serverHost string, serverPort int, codeOverride string, downloads int) {
 	// Validate file exists and get size
 	info, err := os.Stat(filePath)
 	if err != nil {
 		fmt.Println("File not found:", filePath)
 		return
 	}
+
+	downloads = clampDownloadCount(downloads)
 
 	var code string
 	if codeOverride != "" {
@@ -1212,6 +1297,9 @@ func sendFile(filePath, serverHost string, serverPort int, codeOverride string) 
 	} else {
 		code = generateCode(6)
 		fmt.Println("\033[94mCode:\033[0m", code)
+	}
+	if downloads > 1 {
+		fmt.Printf("\033[94mDownloads allowed:\033[0m %d\n", downloads)
 	}
 
 	// Connect to server
@@ -1226,13 +1314,19 @@ func sendFile(filePath, serverHost string, serverPort int, codeOverride string) 
 	// Refresh per-write deadlines while transferring so slow/large sends don't hit a fixed total timeout.
 	const writeTimeout = 30 * time.Second
 
-	// Send headers with buffered writer
+	// Send headers with buffered writer. When more than one download is
+	// requested, the count rides along on the size line as "<size> <count>";
+	// servers that don't understand it simply ignore the extra field.
+	sizeHeader := fmt.Sprintf("%d", info.Size())
+	if downloads > 1 {
+		sizeHeader = fmt.Sprintf("%d %d", info.Size(), downloads)
+	}
 	writer := bufio.NewWriter(conn)
 	headers := []string{
 		"FILE SEND",
 		code,
 		filepath.Base(filePath),
-		fmt.Sprintf("%d", info.Size()),
+		sizeHeader,
 	}
 
 	for _, header := range headers {
@@ -1638,7 +1732,8 @@ func directReceive(listenHost string, listenPort int) {
 func printUsage() {
 	fmt.Println("\033[92mUsage:\033[0m")
 	fmt.Println("  \033[94mServer:\033[0m             sudo airsend -s <host> <port>")
-	fmt.Println("  \033[94mSend file:\033[0m          airsend -f [<code>] [<host>] [<port>] <file1> [<file2> ...]")
+	fmt.Println("  \033[94mSend file:\033[0m          airsend -f [-n<N>] [<code>] [<host>] [<port>] <file1> [<file2> ...]")
+	fmt.Println("                          -n<N>: allow N downloads of the file (default 1, max 25)")
 	fmt.Println("  \033[94mSend file DIRECT:\033[0m          airsend -f IP Port FILE")
 	fmt.Println("  \033[94mReceive file DIRECT:\033[0m       airsend -r <code> IP Port ")
 	fmt.Println("  \033[94mReceive file:\033[0m       airsend -r <code> [<host>] [ Port ]")
@@ -1708,6 +1803,10 @@ func main() {
 		var codeOverride string
 		var files []string
 
+		// Extract an optional download-count flag (-n<N>, or "-n <N>") from
+		// anywhere in the args; the rest is parsed positionally as before.
+		args, downloads := extractDownloadCount(args)
+
 		if len(args) == 0 {
 			fmt.Println("Please specify at least one file to send.")
 			printUsage()
@@ -1744,7 +1843,7 @@ func main() {
 		}
 		// Send each file with optional code override
 		for _, filePath := range files {
-			sendFile(filePath, host, port, codeOverride)
+			sendFile(filePath, host, port, codeOverride, downloads)
 		}
 	case "-r":
 		// Receive mode: syntax -r <code> [<host>] [<port>]

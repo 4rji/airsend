@@ -20,13 +20,15 @@ go run . -sw 0.0.0.0 3888 0.0.0.0 443     # sudo needed for QUIC on 443
 make tidy
 make clean
 
-# Desktop app (Wails)
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
-export PATH=$PATH:$(go env GOPATH)/bin
+# Desktop app (Wails) — run from airsend-app/
+cd airsend-app
+wails dev                           # hot-reload dev mode
 wails build -platform darwin/universal
 ```
 
 Build always includes both `main.go` and `chat-window.go` (see `MAIN_FILES` in Makefile). Building only `main.go` will fail because `RunChatUI` lives in the other file.
+
+The desktop app (`airsend-app/`) calls `findBinary()` at runtime to locate the `airsend` executable — build it first with `make build` before running `wails dev`.
 
 There are currently no `_test.go` files in the repo, so `go test ./...` is a no-op.
 
@@ -54,9 +56,24 @@ Arg parsing is positional and order-sensitive — `isValidIP()` decides whether 
 
 Both transports share the same in-memory room/file state, so a file uploaded from the web UI can be pulled with `airsend -r <code>` from the CLI and vice versa.
 
+### QUIC wire protocol
+
+`handleClient` dispatches on the first line received from each QUIC stream:
+
+| First line | Handler |
+|-----------|---------|
+| `FILE SEND` | `handleFileSend` — reads code/filename/size headers, buffers to `pendingFiles` |
+| `FILE RECV` | `handleFileRecv` — looks up `pendingFiles` by code, streams to receiver |
+| `PASTE SEND` | same as FILE SEND path (text payloads) |
+| `PASTE RECV` | same as FILE RECV path |
+| anything else | `handleChatOrRelay` — treated as a room code for chat broadcast |
+
+All framing is newline-delimited text over `net.Conn`. The code format is `word + digit + digit` (e.g. `wave21`) generated from a fixed 30-word list in `generateCode()`.
+
 ### Shared state (package-level, all in `main.go`)
 
-- `pendingFiles map[code]FileInfo` + `pendingFilesLock` — one-shot file pickups, deleted on download (both QUIC `FILE RECV` and HTTP `/api/download`).
+- `pending map[string]PendingChat` + `pendingLock` — in-flight relay connections while sender and receiver are handshaking (chat and relay modes). Entries are removed after both sides connect.
+- `pendingFiles map[code]FileInfo` + `pendingFilesLock` — file pickups: added by `FILE SEND`, consumed on download via `claimPendingFile` (both QUIC `FILE RECV` and HTTP `/api/download` share it). `FileInfo.downloads` is the remaining pickup count; the entry is deleted when it hits 0. Default is 1 (one-shot); `airsend -f -n<N>` allows up to `MAX_DOWNLOAD_COUNT` (25) downloads of the same upload. The count rides on the `FILE SEND` size header as an optional `"<size> <count>"` second field, so old senders (and the desktop app) that send size alone default to 1.
 - `chatRooms map[code]*ChatRoom` + `chatRoomsLock` — multi-user broadcast rooms. `handleChatOrRelay` is used by BOTH the QUIC handler and the WebSocket handler (`/ws`), so room semantics are identical across transports.
 - `rateLimiter` (`memoryRateLimiter`) — per-scope+IP token bucket with separate rules for `upload`, `paste`, `download`, `download_miss`, `ws`. Cleanup goroutine started by `startRateLimiterCleanup()`.
 
@@ -86,6 +103,15 @@ Connection events are written to `${logDir}/connections.log` via `logConnectionE
 
 The entire web UI is a single Go string constant `indexHTML` in `main.go` (served inline by `mux.HandleFunc("/")`). It is **not** the same file as `index.html` at the repo root — that root file is a separate project-overview landing page, unrelated to what the server serves. When changing the in-app UI, edit the `indexHTML` constant; when changing the marketing/overview page, edit `index.html`.
 
+### Desktop app (`airsend-app/`)
+
+A fully implemented Wails v2 desktop client with its own `go.mod` (`module airsend-app`). Key design:
+
+- `app.go` exposes Go methods to the JS frontend: `StartServer`/`StopServer`/`GetServerStatus` (spawns the `airsend` CLI binary in `-sw` mode), `ChatConnect`/`ChatSend`/`ChatLeave` (direct QUIC to relay), `FileSend`/`FileRecv`/`FileSendText` (direct QUIC), `PickFile`/`PickSaveDir` (native OS dialogs).
+- `findBinary()` looks for the `airsend` executable next to the app bundle, then in cwd/parent, then in `$PATH`.
+- The frontend lives in `frontend/dist/` (embedded via `//go:embed all:frontend/dist`). Build the frontend before `wails build` if it needs updating.
+- `cyberpunk-website/index.html` is the UI source/palette reference; the Wails frontend reuses its CSS variables.
+
 ## Defaults & Network Notes
 
 - `DEFAULT_SERVER_HOST = "app.airsend.us"`, `DEFAULT_SERVER_PORT = 443` — baked into the binary as the fallback relay target for client modes.
@@ -96,3 +122,4 @@ The entire web UI is a single Go string constant `indexHTML` in `main.go` (serve
 
 - `airsend-old-working/` — historical snapshots of `main.go` and friends. Not compiled by the Makefile. Don't edit unless explicitly asked.
 - `noseusacaddy/` — unused Caddy + Docker scaffolding (`Dockerfile`, `docker-compose.yaml`, `Caddyfile`). Not part of the build.
+- `web/` — static landing page (`index.html` + icon). Not served by the Go binary.
