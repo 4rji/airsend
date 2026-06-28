@@ -76,8 +76,10 @@
         <span id="pickedFile" class="muted">no file selected</span>
       </div>
       <input id="sendFileCode" type="text" placeholder="code (optional — generated if empty)" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
-      <input id="sendFileDownloads" type="number" min="1" max="25" step="1" value="1" placeholder="downloads allowed (1–25)" />
       <div class="actions">
+        <label class="downloads-pick">downloads
+          <select id="sendFileDownloads" class="downloads-select"></select>
+        </label>
         <button id="uploadBtn" class="primary">upload</button>
         <span id="uploadRelayNote" class="muted"></span>
       </div>
@@ -96,9 +98,11 @@
       </p>
       <input id="pasteFilename" type="text" placeholder="filename (optional, e.g. note.txt)" autocomplete="off" />
       <input id="pasteCode" type="text" placeholder="code (optional — generated if empty)" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
-      <input id="pasteDownloads" type="number" min="1" max="25" step="1" value="1" placeholder="downloads allowed (1–25)" />
       <textarea id="pasteBody" placeholder="paste or type here…"></textarea>
       <div class="actions">
+        <label class="downloads-pick">downloads
+          <select id="pasteDownloads" class="downloads-select"></select>
+        </label>
         <button id="pasteBtn" class="primary">send</button>
         <span id="pasteRelayNote" class="muted"></span>
       </div>
