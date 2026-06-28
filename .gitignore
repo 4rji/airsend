@@ -3,3 +3,4 @@
 bin/
 airsend
 airsend-logs/connections.log
+airsend-app/
