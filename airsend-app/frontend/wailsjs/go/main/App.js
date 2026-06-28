@@ -26,12 +26,12 @@ export function FileRecv(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['FileRecv'](arg1, arg2, arg3, arg4);
 }
 
-export function FileSend(arg1, arg2, arg3, arg4) {
-  return window['go']['main']['App']['FileSend'](arg1, arg2, arg3, arg4);
+export function FileSend(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['FileSend'](arg1, arg2, arg3, arg4, arg5);
 }
 
-export function FileSendText(arg1, arg2, arg3, arg4, arg5) {
-  return window['go']['main']['App']['FileSendText'](arg1, arg2, arg3, arg4, arg5);
+export function FileSendText(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['FileSendText'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function GenerateCode() {

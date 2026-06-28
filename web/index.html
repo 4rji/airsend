@@ -365,6 +365,8 @@ a:hover { color: var(--fuchsia); }
           <input name="file" type="file" required>
           <label>Code (optional)</label>
           <input name="code" placeholder="e.g. dock42">
+          <label>Downloads allowed (1–25)</label>
+          <input name="downloads" type="number" min="1" max="25" step="1" value="1" placeholder="1">
           <div class="form-actions">
             <button class="btn-upload" type="submit">Upload</button>
             <div id="uploadCode"></div>
@@ -394,6 +396,8 @@ a:hover { color: var(--fuchsia); }
       <input id="pasteFilename" name="filename" placeholder="script.sh">
       <label>Code (optional)</label>
       <input id="pasteCode" name="code" placeholder="e.g. mint21">
+      <label>Downloads allowed (1–25)</label>
+      <input id="pasteDownloads" name="downloads" type="number" min="1" max="25" step="1" value="1" placeholder="1">
       <label>Text to send</label>
       <textarea id="pasteText" name="text" required></textarea>
       <div class="form-actions">
@@ -455,10 +459,13 @@ document.getElementById('uploadForm').onsubmit = async e => {
     downloadCodeInput.value = parsed.data.code;
     const safeFile = escapeHtml(parsed.data.filename || '');
     const safeCode = escapeHtml(parsed.data.code     || '');
+    const dls      = parsed.data.downloads || 1;
+    const dlNote   = dls > 1 ? `<div class="upload-meta-file">available for ${dls} downloads</div>` : '';
     statusEl.innerHTML =
       `<div class="upload-meta">
         <div class="upload-meta-label">uploaded</div>
         <div class="upload-meta-file">${safeFile}</div>
+        ${dlNote}
       </div>`;
     uploadCodeEl.innerHTML =
       `<span class="code-label">code:</span><span class="result-code">${safeCode}</span>`;
@@ -474,9 +481,10 @@ document.getElementById('pasteForm').onsubmit = async e => {
   pasteDownloadLink.style.display = 'none';
   pasteCodeOutEl.innerHTML = '';
   const payload = {
-    filename: document.getElementById('pasteFilename').value,
-    code:     document.getElementById('pasteCode').value,
-    text:     document.getElementById('pasteText').value,
+    filename:  document.getElementById('pasteFilename').value,
+    code:      document.getElementById('pasteCode').value,
+    text:      document.getElementById('pasteText').value,
+    downloads: parseInt(document.getElementById('pasteDownloads').value, 10) || 1,
   };
   try {
     const res    = await fetch('/api/paste', {

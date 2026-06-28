@@ -224,6 +224,7 @@
     if (!fileState.pickedPath) return alert("choose a file first");
     const { relayHost, relayPort } = state.settings;
     const code = $("sendFileCode").value.trim();
+    const downloads = parseInt($("sendFileDownloads").value, 10) || 1;
     $("uploadBtn").disabled = true;
     appendLog("uploadStatus", `uploading ${basename(fileState.pickedPath)}…`);
     try {
@@ -232,10 +233,11 @@
         code,
         relayHost,
         relayPort,
+        downloads,
       );
       appendLog(
         "uploadStatus",
-        `done\ncode: ${r.code}\nfilename: ${r.filename}\nsize: ${humanBytes(r.size)}`,
+        `done\ncode: ${r.code}\nfilename: ${r.filename}\nsize: ${humanBytes(r.size)}\ndownloads: ${r.downloads}`,
       );
     } catch (e) {
       appendLog("uploadStatus", `upload failed: ${e}`);
@@ -250,6 +252,7 @@
     const { relayHost, relayPort } = state.settings;
     const filename = $("pasteFilename").value.trim();
     const code = $("pasteCode").value.trim();
+    const downloads = parseInt($("pasteDownloads").value, 10) || 1;
     $("pasteBtn").disabled = true;
     appendLog("pasteStatus", `sending text (${humanBytes(new Blob([text]).size)})…`);
     try {
@@ -259,10 +262,11 @@
         code,
         relayHost,
         relayPort,
+        downloads,
       );
       appendLog(
         "pasteStatus",
-        `done\ncode: ${r.code}\nfilename: ${r.filename}\nsize: ${humanBytes(r.size)}`,
+        `done\ncode: ${r.code}\nfilename: ${r.filename}\nsize: ${humanBytes(r.size)}\ndownloads: ${r.downloads}`,
       );
     } catch (e) {
       appendLog("pasteStatus", `send failed: ${e}`);

@@ -34,6 +34,7 @@ export namespace main {
 	    code: string;
 	    filename: string;
 	    size: number;
+	    downloads: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new FileSendResult(source);
@@ -44,6 +45,7 @@ export namespace main {
 	        this.code = source["code"];
 	        this.filename = source["filename"];
 	        this.size = source["size"];
+	        this.downloads = source["downloads"];
 	    }
 	}
 	export class ServerStatus {

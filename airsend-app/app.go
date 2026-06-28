@@ -49,9 +49,10 @@ type ChatStatus struct {
 }
 
 type FileSendResult struct {
-	Code     string `json:"code"`
-	Filename string `json:"filename"`
-	Size     int64  `json:"size"`
+	Code      string `json:"code"`
+	Filename  string `json:"filename"`
+	Size      int64  `json:"size"`
+	Downloads int    `json:"downloads"`
 }
 
 type FileRecvResult struct {
@@ -364,7 +365,7 @@ func (a *App) PickSaveDir() (string, error) {
 
 // FileSend uploads a local file to the relay under the given code.
 // If code is empty, one is generated and returned.
-func (a *App) FileSend(path, code, host string, port int) (FileSendResult, error) {
+func (a *App) FileSend(path, code, host string, port int, downloads int) (FileSendResult, error) {
 	var empty FileSendResult
 
 	info, err := os.Stat(path)
@@ -374,11 +375,11 @@ func (a *App) FileSend(path, code, host string, port int) (FileSendResult, error
 	if info.IsDir() {
 		return empty, fmt.Errorf("path is a directory")
 	}
-	return a.sendBody(path, filepath.Base(path), info.Size(), nil, code, host, port)
+	return a.sendBody(path, filepath.Base(path), info.Size(), nil, code, host, port, downloads)
 }
 
 // FileSendText sends a text/script payload as a file under the given code.
-func (a *App) FileSendText(text, filename, code, host string, port int) (FileSendResult, error) {
+func (a *App) FileSendText(text, filename, code, host string, port int, downloads int) (FileSendResult, error) {
 	var empty FileSendResult
 	if text == "" {
 		return empty, fmt.Errorf("text is empty")
@@ -387,12 +388,25 @@ func (a *App) FileSendText(text, filename, code, host string, port int) (FileSen
 		filename = fmt.Sprintf("pasted-%d.txt", time.Now().Unix())
 	}
 	body := []byte(text)
-	return a.sendBody("", filename, int64(len(body)), body, code, host, port)
+	return a.sendBody("", filename, int64(len(body)), body, code, host, port, downloads)
+}
+
+// clampDownloads keeps a requested download count within [1, 25], matching the
+// server's MAX_DOWNLOAD_COUNT. A value below 1 falls back to the one-shot default.
+func clampDownloads(n int) int {
+	if n < 1 {
+		return 1
+	}
+	if n > 25 {
+		return 25
+	}
+	return n
 }
 
 // sendBody performs the FILE SEND flow. Either `path` is set (streams the file)
-// or `body` is set (writes the byte slice directly).
-func (a *App) sendBody(path, filename string, size int64, body []byte, code, host string, port int) (FileSendResult, error) {
+// or `body` is set (writes the byte slice directly). downloads rides on the size
+// header as an optional "<size> <count>" second field when greater than 1.
+func (a *App) sendBody(path, filename string, size int64, body []byte, code, host string, port int, downloads int) (FileSendResult, error) {
 	var empty FileSendResult
 
 	host = strings.TrimSpace(host)
@@ -420,8 +434,14 @@ func (a *App) sendBody(path, filename string, size int64, body []byte, code, hos
 		_ = qconn.CloseWithError(0, "done")
 	}()
 
+	downloads = clampDownloads(downloads)
+	sizeHeader := strconv.FormatInt(size, 10)
+	if downloads > 1 {
+		sizeHeader = fmt.Sprintf("%d %d", size, downloads)
+	}
+
 	writer := bufio.NewWriter(stream)
-	headers := []string{"FILE SEND", code, filename, strconv.FormatInt(size, 10)}
+	headers := []string{"FILE SEND", code, filename, sizeHeader}
 	for _, h := range headers {
 		if _, err := writer.WriteString(h + "\n"); err != nil {
 			return empty, fmt.Errorf("send header %q: %w", h, err)
@@ -459,7 +479,7 @@ func (a *App) sendBody(path, filename string, size int64, body []byte, code, hos
 		return empty, fmt.Errorf("server refused: %q", strings.TrimSpace(resp))
 	}
 
-	return FileSendResult{Code: code, Filename: filename, Size: size}, nil
+	return FileSendResult{Code: code, Filename: filename, Size: size, Downloads: downloads}, nil
 }
 
 // FileRecv downloads a file by code to saveDir (defaults to ~/Downloads).

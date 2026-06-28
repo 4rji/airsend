@@ -799,6 +799,21 @@ func clampDownloadCount(n int) int {
 	return n
 }
 
+// parseDownloadField turns a web form / JSON string into a download count.
+// An empty or non-numeric value yields 0 (which clampDownloadCount maps to the
+// one-shot default). The result is clamped to [1, MAX_DOWNLOAD_COUNT].
+func parseDownloadField(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 1
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 1
+	}
+	return clampDownloadCount(n)
+}
+
 // claimPendingFile looks up a stored file by code and consumes one download
 // slot. The entry is removed once its remaining downloads reach zero. It returns
 // the file info, the number of downloads left after this claim, and whether the
@@ -1034,7 +1049,7 @@ func normalizeTextToLF(text string) string {
 	return strings.ReplaceAll(text, "\r", "\n")
 }
 
-func savePendingFile(code, filename string, src io.Reader) (string, FileInfo, error) {
+func savePendingFile(code, filename string, src io.Reader, downloads int) (string, FileInfo, error) {
 	normalizedCode := normalizeCode(code)
 	if normalizedCode == "" {
 		normalizedCode = generateCode(6)
@@ -1059,7 +1074,7 @@ func savePendingFile(code, filename string, src io.Reader) (string, FileInfo, er
 		filename:  safeFilename,
 		filesize:  n,
 		fullPath:  fullPath,
-		downloads: 1,
+		downloads: clampDownloadCount(downloads),
 	}
 
 	pendingFilesLock.Lock()
@@ -1123,12 +1138,13 @@ func startWebServer(addr string) {
 		}
 		defer file.Close()
 
-		code, info, err := savePendingFile(r.FormValue("code"), header.Filename, file)
+		downloads := parseDownloadField(r.FormValue("downloads"))
+		code, info, err := savePendingFile(r.FormValue("code"), header.Filename, file, downloads)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		logConnectionEvent("http", clientIP, fmt.Sprintf("upload_saved code=%s file=%s bytes=%d raw_remote=%s", code, info.filename, info.filesize, rawRemote))
+		logConnectionEvent("http", clientIP, fmt.Sprintf("upload_saved code=%s file=%s bytes=%d downloads=%d raw_remote=%s", code, info.filename, info.filesize, info.downloads, rawRemote))
 		recvHost, recvPort, recvCmd := buildReceiveCommand(r, code)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -1136,6 +1152,7 @@ func startWebServer(addr string) {
 			"code":      code,
 			"filename":  info.filename,
 			"bytes":     info.filesize,
+			"downloads": info.downloads,
 			"recv_host": recvHost,
 			"recv_port": recvPort,
 			"recv_cmd":  recvCmd,
@@ -1156,9 +1173,10 @@ func startWebServer(addr string) {
 		}
 
 		var payload struct {
-			Text     string `json:"text"`
-			Filename string `json:"filename"`
-			Code     string `json:"code"`
+			Text      string `json:"text"`
+			Filename  string `json:"filename"`
+			Code      string `json:"code"`
+			Downloads int    `json:"downloads"`
 		}
 
 		if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
@@ -1174,6 +1192,7 @@ func startWebServer(addr string) {
 			payload.Text = r.FormValue("text")
 			payload.Filename = r.FormValue("filename")
 			payload.Code = r.FormValue("code")
+			payload.Downloads = parseDownloadField(r.FormValue("downloads"))
 		}
 
 		text := normalizeTextToLF(payload.Text)
@@ -1187,12 +1206,12 @@ func startWebServer(addr string) {
 			filename = "script.txt"
 		}
 
-		code, info, err := savePendingFile(payload.Code, filename, strings.NewReader(text))
+		code, info, err := savePendingFile(payload.Code, filename, strings.NewReader(text), payload.Downloads)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		logConnectionEvent("http", clientIP, fmt.Sprintf("paste_saved code=%s file=%s bytes=%d raw_remote=%s", code, info.filename, info.filesize, rawRemote))
+		logConnectionEvent("http", clientIP, fmt.Sprintf("paste_saved code=%s file=%s bytes=%d downloads=%d raw_remote=%s", code, info.filename, info.filesize, info.downloads, rawRemote))
 		recvHost, recvPort, recvCmd := buildReceiveCommand(r, code)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -1200,6 +1219,7 @@ func startWebServer(addr string) {
 			"code":         code,
 			"filename":     info.filename,
 			"bytes":        info.filesize,
+			"downloads":    info.downloads,
 			"line_endings": "LF",
 			"recv_host":    recvHost,
 			"recv_port":    recvPort,

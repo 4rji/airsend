@@ -14,9 +14,9 @@ export function CheckRelayHealth(arg1:string,arg2:number):Promise<boolean>;
 
 export function FileRecv(arg1:string,arg2:string,arg3:string,arg4:number):Promise<main.FileRecvResult>;
 
-export function FileSend(arg1:string,arg2:string,arg3:string,arg4:number):Promise<main.FileSendResult>;
+export function FileSend(arg1:string,arg2:string,arg3:string,arg4:number,arg5:number):Promise<main.FileSendResult>;
 
-export function FileSendText(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number):Promise<main.FileSendResult>;
+export function FileSendText(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number,arg6:number):Promise<main.FileSendResult>;
 
 export function GenerateCode():Promise<string>;
 
